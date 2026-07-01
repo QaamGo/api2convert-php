@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<ruleset name="api2convert-sdk">
+    <description>PSR-12 coding standard for the API2Convert PHP SDK.</description>
+
+    <file>src</file>
+    <file>tests</file>
+
+    <arg name="extensions" value="php"/>
+    <arg name="colors"/>
+    <arg value="sp"/>
+
+    <rule ref="PSR12"/>
+
+    <ini name="memory_limit" value="256M"/>
+</ruleset>
