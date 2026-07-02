@@ -50,7 +50,7 @@ $client->convert('https://example.com/photo.png', 'jpg')->save('photo.jpg');
 // 3) With conversion options (discover them via $client->options('jpg'))
 $client->convert('photo.png', 'jpg', [
     'quality' => 85, 'width' => 1280, 'height' => 720,
-])->save('out/');   // a directory → the API filename is kept
+])->save('out/');   // the processed file directory 
 ```
 
 `convert($input, $to, $options = [])` — `$input` is a **local path, a public URL, or an open
@@ -64,7 +64,7 @@ $result = $client->convert('report.docx', 'pdf');
 $result->save('report.pdf');       // stream to a file
 $result->save('downloads/');       // ...or a directory (keeps the server filename)
 $content = $result->contents();    // ...or get the raw bytes
-$url     = $result->url();          // ...or just the download URL
+$url     = $result->url();         // ...or just the download URL
 ```
 
 ## Password-protect the result
