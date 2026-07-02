@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Api2Convert\Tests\Live;
 
 use Api2Convert\Api2Convert;
-use Api2Convert\Exception\ConversionFailedException;
+use Api2Convert\Exception\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -44,9 +44,13 @@ final class ConversionConformanceTest extends TestCase
         unlink($target);
     }
 
-    public function testFailingConversionRaisesTypedError(): void
+    public function testInvalidTargetRaisesValidationError(): void
     {
-        $this->expectException(ConversionFailedException::class);
+        // The real API rejects an unknown target synchronously at job creation
+        // (HTTP 400 -> ValidationException), not as an async failed job. The
+        // failed/canceled-job -> ConversionFailedException path is covered by the
+        // unit suite (WaitTest, PollingGuardsTest).
+        $this->expectException(ValidationException::class);
         $this->client()->convert(
             'https://example-files.online-convert.com/raster%20image/jpg/example.jpg',
             'this-is-not-a-real-target',

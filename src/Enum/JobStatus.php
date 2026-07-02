@@ -8,8 +8,9 @@ namespace Api2Convert\Enum;
  * Well-known job status codes (the `status.code` field).
  *
  * The API may introduce further codes; treat any code not listed here as
- * non-terminal. Use {@see JobStatus::isTerminal()} rather than comparing strings
- * by hand.
+ * non-terminal. Use {@see JobStatus::isTerminal()} on a case, or
+ * {@see JobStatus::isTerminalCode()} for a raw status string, rather than comparing
+ * strings by hand.
  */
 enum JobStatus: string
 {
@@ -20,13 +21,14 @@ enum JobStatus: string
     case Processing = 'processing';
     case Completed = 'completed';
     case Failed = 'failed';
+    case Canceled = 'canceled';
 
     /**
      * A job in a terminal state is finished and will not change further.
      */
     public function isTerminal(): bool
     {
-        return $this === self::Completed || $this === self::Failed;
+        return $this === self::Completed || $this === self::Failed || $this === self::Canceled;
     }
 
     /**

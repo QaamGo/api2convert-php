@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Api2Convert\Tests\Unit;
 
+use Api2Convert\Model\OutputFile;
 use Api2Convert\Tests\TestCase;
 
 final class ConvertTest extends TestCase
@@ -154,6 +155,79 @@ final class ConvertTest extends TestCase
 
         self::assertSame('RAWBYTES', $result->contents());
         self::assertSame('https://dl.example.com/out.png', (string) $this->requestAt(2)->getUri());
+    }
+
+    public function testConvertWithDownloadPasswordSetsItAndSendsHeaderTransparently(): void
+    {
+        $this->http->addResponse($this->jsonResponse(201, ['id' => 'j', 'status' => ['code' => 'incomplete']]));
+        $this->http->addResponse($this->jsonResponse(200, [
+            'id' => 'j',
+            'status' => ['code' => 'completed'],
+            'output' => [['id' => 'o', 'uri' => 'https://dl.example.com/secret.pdf', 'filename' => 'secret.pdf']],
+        ]));
+        $this->http->addResponse(new \GuzzleHttp\Psr7\Response(200, [], 'SECRET'));
+
+        $result = $this->client()->convert('https://example.com/a.docx', 'pdf', downloadPassword: 'hunter2');
+
+        // 1) the password is sent as the job's download_passwords on create
+        self::assertSame(['hunter2'], $this->bodyOf($this->requestAt(0))['download_passwords']);
+
+        // 2) ...and applied automatically on download — the caller re-supplies nothing
+        self::assertSame('SECRET', $result->contents());
+        self::assertSame('hunter2', $this->requestAt(2)->getHeaderLine('X-Oc-Download-Password'));
+    }
+
+    public function testExplicitDownloadPasswordOverridesRememberedOne(): void
+    {
+        $this->http->addResponse($this->jsonResponse(201, ['id' => 'j', 'status' => ['code' => 'incomplete']]));
+        $this->http->addResponse($this->jsonResponse(200, [
+            'id' => 'j',
+            'status' => ['code' => 'completed'],
+            'output' => [['id' => 'o', 'uri' => 'https://dl.example.com/secret.pdf']],
+        ]));
+        $this->http->addResponse(new \GuzzleHttp\Psr7\Response(200, [], 'SECRET'));
+
+        $result = $this->client()->convert('https://example.com/a.docx', 'pdf', downloadPassword: 'hunter2');
+        $result->contents('override-pw');
+
+        self::assertSame('override-pw', $this->requestAt(2)->getHeaderLine('X-Oc-Download-Password'));
+    }
+
+    public function testDownloadHelperCarriesDownloadPassword(): void
+    {
+        $this->http->addResponse(new \GuzzleHttp\Psr7\Response(200, [], 'BYTES'));
+
+        $output = new OutputFile(id: 'o', uri: 'https://dl.example.com/secret.pdf', filename: 'secret.pdf');
+        $bytes = $this->client()->download($output, 'hunter2')->contents();
+
+        self::assertSame('BYTES', $bytes);
+        self::assertSame('hunter2', $this->requestAt(0)->getHeaderLine('X-Oc-Download-Password'));
+    }
+
+    public function testConvertAsyncSetsDownloadPasswordOnCreate(): void
+    {
+        $this->http->addResponse($this->jsonResponse(201, ['id' => 'job-async', 'status' => ['code' => 'incomplete']]));
+
+        $this->client()->convertAsync('https://example.com/a.mov', 'mp4', downloadPassword: 'hunter2');
+
+        self::assertSame(['hunter2'], $this->bodyOf($this->requestAt(0))['download_passwords']);
+    }
+
+    public function testConvertWithoutDownloadPasswordSendsNoHeaderOrField(): void
+    {
+        $this->http->addResponse($this->jsonResponse(201, ['id' => 'j', 'status' => ['code' => 'incomplete']]));
+        $this->http->addResponse($this->jsonResponse(200, [
+            'id' => 'j',
+            'status' => ['code' => 'completed'],
+            'output' => [['id' => 'o', 'uri' => 'https://dl.example.com/out.png']],
+        ]));
+        $this->http->addResponse(new \GuzzleHttp\Psr7\Response(200, [], 'BYTES'));
+
+        $result = $this->client()->convert('https://example.com/photo.jpg', 'png');
+        $result->contents();
+
+        self::assertArrayNotHasKey('download_passwords', $this->bodyOf($this->requestAt(0)));
+        self::assertFalse($this->requestAt(2)->hasHeader('X-Oc-Download-Password'));
     }
 
     public function testOptionsDiscoveryQueriesByTargetOnly(): void

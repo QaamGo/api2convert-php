@@ -69,7 +69,15 @@ final class Job
     }
 
     /**
-     * Finished (completed or failed) and will not change further.
+     * The job was canceled server-side — terminal, and produced no output.
+     */
+    public function isCanceled(): bool
+    {
+        return $this->status->code === JobStatus::Canceled->value;
+    }
+
+    /**
+     * Finished (completed, failed or canceled) and will not change further.
      */
     public function isTerminal(): bool
     {

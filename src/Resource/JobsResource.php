@@ -6,6 +6,7 @@ namespace Api2Convert\Resource;
 
 use Api2Convert\Exception\ConversionFailedException;
 use Api2Convert\Exception\TimeoutException;
+use Api2Convert\Http\Config;
 use Api2Convert\Http\Transport;
 use Api2Convert\Model\InputFile;
 use Api2Convert\Model\Job;
@@ -114,23 +115,27 @@ final class JobsResource
     /**
      * Block until the job reaches a terminal status, polling with backoff.
      *
-     * @param int|null $timeoutSeconds Overrides the configured poll timeout.
-     * @param bool     $throwOnFailure When true (default), a failed job raises {@see ConversionFailedException}.
+     * @param int|null $timeoutSeconds Overrides the configured poll timeout (clamped to a sane maximum).
+     * @param bool     $throwOnFailure When true (default), a failed/canceled job throws (see @throws below).
      *
-     * @throws ConversionFailedException When the job fails and $throwOnFailure is true.
+     * @throws ConversionFailedException When the job fails/is canceled and $throwOnFailure is true.
      * @throws TimeoutException          When the timeout elapses before completion.
      */
     public function wait(string $jobId, ?int $timeoutSeconds = null, bool $throwOnFailure = true): Job
     {
         $config = $this->transport->config();
-        $timeout = $timeoutSeconds ?? $config->pollTimeout;
+
+        // Clamp again here (Config::create already clamps) so a directly-constructed
+        // Config or a per-call override can never busy-loop or poll unbounded.
+        $timeout = min(Config::MAX_POLL_TIMEOUT, max(0, $timeoutSeconds ?? $config->pollTimeout));
+        $maxInterval = max(Config::MIN_POLL_INTERVAL, $config->pollMaxInterval);
+        $interval = max(Config::MIN_POLL_INTERVAL, $config->pollInterval);
         $deadline = microtime(true) + $timeout;
-        $interval = $config->pollInterval;
 
         while (true) {
             $job = $this->get($jobId);
 
-            if ($job->isFailed() && $throwOnFailure) {
+            if (($job->isFailed() || $job->isCanceled()) && $throwOnFailure) {
                 throw new ConversionFailedException($job);
             }
 
@@ -143,7 +148,7 @@ final class JobsResource
             }
 
             $this->transport->pause($interval);
-            $interval = min($config->pollMaxInterval, $interval * 1.5);
+            $interval = min($maxInterval, $interval * 1.5);
         }
     }
 

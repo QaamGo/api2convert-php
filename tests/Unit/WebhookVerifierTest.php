@@ -53,4 +53,11 @@ final class WebhookVerifierTest extends TestCase
         $this->expectException(SignatureVerificationException::class);
         Api2Convert::webhooks()->parse('not-json');
     }
+
+    public function testRejectsValidJsonThatIsNotAnObject(): void
+    {
+        // `123` is valid JSON but decodes to a scalar, not a job object.
+        $this->expectException(SignatureVerificationException::class);
+        Api2Convert::webhooks()->parse('123');
+    }
 }

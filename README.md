@@ -56,7 +56,7 @@ $client->convert('photo.png', 'jpg', [
 `convert($input, $to, $options = [])` — `$input` is a **local path, a public URL, or an open
 stream/resource**; `$to` is the **target format**; `$options` are the **conversion options** for
 that target. Less-common controls are named arguments: `category`, `timeout`, `outputIndex`,
-`filename`. The returned `ConversionResult` lets you:
+`filename`, `downloadPassword`. The returned `ConversionResult` lets you:
 
 ```php
 $result = $client->convert('report.docx', 'pdf');
@@ -65,6 +65,25 @@ $result->save('report.pdf');       // stream to a file
 $result->save('downloads/');       // ...or a directory (keeps the server filename)
 $content = $result->contents();    // ...or get the raw bytes
 $url     = $result->url();          // ...or just the download URL
+```
+
+## Password-protect the result
+
+Pass `downloadPassword` and the output is locked behind it. The SDK remembers the password and
+sends it automatically when you download — you don't pass it again:
+
+```php
+$result = $client->convert('statement.docx', 'pdf', downloadPassword: 'hunter2');
+
+$result->save('statement.pdf');    // the password is applied for you
+```
+
+The download URL still needs the password from anywhere else (a browser, cURL, another process),
+via the `X-Oc-Download-Password` header. When you already hold an `OutputFile` — e.g. from the Jobs
+API — hand the password to `download()`:
+
+```php
+$client->download($output, 'hunter2')->save('out/');
 ```
 
 ## Asynchronous conversions & webhooks

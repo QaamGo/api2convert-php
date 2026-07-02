@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Api2Convert\Enum;
 
 /**
- * The kind of source an input file is created from (the input `type` field).
- *
- * You can pass these enum cases or their string values when building inputs.
+ * The kinds of source an input file can be created from — the values of the API's
+ * input `type` field. Provided as a typed reference for building input descriptors
+ * by hand, e.g. `addInput($id, ['type' => InputType::Remote->value, 'source' => …])`;
+ * the descriptor arrays the SDK sends use these string values.
  */
 enum InputType: string
 {

@@ -17,10 +17,15 @@ use Api2Convert\Model\OutputFile;
  */
 final class ConversionResult
 {
+    /**
+     * @param string|null $downloadPassword Password set when the conversion was created; sent
+     *                                       automatically when downloading a protected output.
+     */
     public function __construct(
         public readonly Job $job,
         private readonly Transport $transport,
         private readonly int $index = 0,
+        private readonly ?string $downloadPassword = null,
     ) {
     }
 
@@ -52,7 +57,8 @@ final class ConversionResult
     }
 
     /**
-     * Download the selected output to disk.
+     * Download the selected output to disk. A download password set at conversion time is applied
+     * automatically; pass one here only to override it.
      *
      * @return string The path the file was written to.
      */
@@ -62,7 +68,8 @@ final class ConversionResult
     }
 
     /**
-     * Download the selected output and return its contents (loads into memory).
+     * Download the selected output and return its contents (loads into memory). A download password
+     * set at conversion time is applied automatically; pass one here only to override it.
      */
     public function contents(?string $downloadPassword = null): string
     {
@@ -70,10 +77,11 @@ final class ConversionResult
     }
 
     /**
-     * A {@see FileDownload} for a specific output (defaults to the selected one).
+     * A {@see FileDownload} for a specific output (defaults to the selected one). It carries the
+     * download password set at conversion time, so downloads need no password re-supplied.
      */
     public function download(?OutputFile $output = null): FileDownload
     {
-        return new FileDownload($this->transport, $output ?? $this->output());
+        return new FileDownload($this->transport, $output ?? $this->output(), $this->downloadPassword);
     }
 }

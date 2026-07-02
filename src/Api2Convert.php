@@ -36,7 +36,7 @@ use Psr\Http\Message\StreamInterface;
  */
 final class Api2Convert
 {
-    public const VERSION = '10.1.0';
+    public const VERSION = '10.2.0';
 
     private readonly Transport $transport;
     private readonly JobsResource $jobs;
@@ -117,6 +117,8 @@ final class Api2Convert
      * @param int|null             $timeout     Override the poll timeout (seconds).
      * @param int|null             $outputIndex Which output file the result exposes (default 0).
      * @param string|null          $filename    Filename to advertise for an uploaded local file.
+     * @param string|null          $downloadPassword Protect the result with this password; it is
+     *                                                remembered and sent automatically on download.
      */
     public function convert(
         mixed $input,
@@ -126,11 +128,12 @@ final class Api2Convert
         ?int $timeout = null,
         ?int $outputIndex = null,
         ?string $filename = null,
+        ?string $downloadPassword = null,
     ): ConversionResult {
-        $job = $this->startConversion($input, $to, $options, $category, null, $filename);
+        $job = $this->startConversion($input, $to, $options, $category, null, $filename, $downloadPassword);
         $done = $this->jobs->wait($job->id, $timeout);
 
-        return new ConversionResult($done, $this->transport, $outputIndex ?? 0);
+        return new ConversionResult($done, $this->transport, $outputIndex ?? 0, $downloadPassword);
     }
 
     /**
@@ -143,6 +146,9 @@ final class Api2Convert
      * @param string|null          $callback Webhook URL notified when the job's status changes.
      * @param string|null          $category Conversion category, when a target is ambiguous.
      * @param string|null          $filename Filename to advertise for an uploaded local file.
+     * @param string|null          $downloadPassword Protect the result with this password; the
+     *                                                `X-Oc-Download-Password` header is then
+     *                                                required to download it.
      */
     public function convertAsync(
         mixed $input,
@@ -151,16 +157,20 @@ final class Api2Convert
         ?string $callback = null,
         ?string $category = null,
         ?string $filename = null,
+        ?string $downloadPassword = null,
     ): Job {
-        return $this->startConversion($input, $to, $options, $category, $callback, $filename);
+        return $this->startConversion($input, $to, $options, $category, $callback, $filename, $downloadPassword);
     }
 
     /**
      * Get a {@see FileDownload} for an output file: `$client->download($out)->save('./out/')`.
+     *
+     * @param string|null $downloadPassword Password protecting the output; remembered and sent
+     *                                       automatically on download (overridable per call).
      */
-    public function download(OutputFile $output): FileDownload
+    public function download(OutputFile $output, ?string $downloadPassword = null): FileDownload
     {
-        return new FileDownload($this->transport, $output);
+        return new FileDownload($this->transport, $output, $downloadPassword);
     }
 
     public function jobs(): JobsResource
@@ -223,6 +233,7 @@ final class Api2Convert
         ?string $category,
         ?string $callback,
         ?string $filename,
+        ?string $downloadPassword = null,
     ): Job {
         $conversion = ['target' => $to];
         if ($category !== null) {
@@ -236,6 +247,9 @@ final class Api2Convert
         if ($callback !== null) {
             $job['callback'] = $callback;
             $job['notify_status'] = true;
+        }
+        if ($downloadPassword !== null) {
+            $job['download_passwords'] = [$downloadPassword];
         }
 
         if (is_string($input) && preg_match('#^https?://#i', $input) === 1) {

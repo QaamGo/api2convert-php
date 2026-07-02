@@ -80,4 +80,14 @@ final class ErrorMappingTest extends TestCase
             self::assertNotSame('', $e->getMessage());
         }
     }
+
+    public function testNonJsonSuccessBodyRaisesNetworkException(): void
+    {
+        // A 2xx carrying a non-JSON body (e.g. an intermediary HTML/error page) must
+        // stay inside the SDK exception hierarchy, not leak a bare \JsonException.
+        $this->http->addResponse(new \GuzzleHttp\Psr7\Response(200, [], '<html>maintenance</html>'));
+
+        $this->expectException(\Api2Convert\Exception\NetworkException::class);
+        $this->client(['maxRetries' => 0])->jobs()->get('job-x');
+    }
 }

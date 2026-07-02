@@ -16,8 +16,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          # Run static analysis on the highest supported PHP so version-sensitive
+          # findings on 8.3/8.4 are exercised, not only 8.2.
+          php-version: '8.4'
           coverage: none
+      - name: Validate composer.json
+        run: composer validate --strict
       - run: composer install --no-interaction --no-progress
       - name: PHP_CodeSniffer (PSR-12)
         run: vendor/bin/phpcs

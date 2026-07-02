@@ -15,6 +15,16 @@ default:
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer install --no-interaction --no-progress
 
+# Validate composer.json so metadata drift is caught here, not at publish time.
+# Only needs the composer binary, so it skips the full dependency install.
+validate:
+  stage: test
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git unzip > /dev/null
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+  script:
+    - composer validate --strict
+
 cs:
   stage: test
   script:
@@ -22,6 +32,8 @@ cs:
 
 stan:
   stage: test
+  # Analyse on the highest supported PHP so version-sensitive findings are exercised.
+  image: php:8.4-cli
   script:
     - vendor/bin/phpstan analyse --no-progress
 

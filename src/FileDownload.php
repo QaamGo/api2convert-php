@@ -14,9 +14,14 @@ use Api2Convert\Model\OutputFile;
  */
 final class FileDownload
 {
+    /**
+     * @param string|null $downloadPassword Password remembered from `convert()` / `$client->download()`,
+     *                                       sent automatically on download; overridable per call.
+     */
     public function __construct(
         private readonly Transport $transport,
         private readonly OutputFile $output,
+        private readonly ?string $downloadPassword = null,
     ) {
     }
 
@@ -32,7 +37,9 @@ final class FileDownload
      * Stream the file to disk.
      *
      * @param string      $pathOrDir        A file path, or a directory (the API filename is used).
-     * @param string|null $downloadPassword Required only if the job set a download password.
+     * @param string|null $downloadPassword Only needed if the job set a download password and it
+     *                                       wasn't already supplied at conversion time; overrides
+     *                                       the remembered one.
      * @return string The path the file was written to.
      */
     public function save(string $pathOrDir, ?string $downloadPassword = null): string
@@ -63,6 +70,8 @@ final class FileDownload
 
     /**
      * Download the file and return its contents (loads into memory).
+     *
+     * @param string|null $downloadPassword Overrides the password remembered from conversion time.
      */
     public function contents(?string $downloadPassword = null): string
     {
@@ -76,7 +85,9 @@ final class FileDownload
             || str_ends_with($pathOrDir, DIRECTORY_SEPARATOR);
 
         if ($looksLikeDir) {
-            $name = $this->output->filename ?? ($this->output->id ?? 'output');
+            $name = $this->safeName($this->output->filename)
+                ?? $this->safeName($this->output->id)
+                ?? 'output';
 
             return rtrim($pathOrDir, '/\\') . DIRECTORY_SEPARATOR . $name;
         }
@@ -85,10 +96,36 @@ final class FileDownload
     }
 
     /**
+     * Reduce an API-supplied name to a bare filename safe to append to a target
+     * directory. `output.filename` / `output.id` come straight from the API JSON,
+     * so a value like `../../etc/cron.d/evil` (or one containing separators or a
+     * NUL byte) must never escape the directory the caller chose. Returns null when
+     * nothing usable remains, so the caller can fall back.
+     */
+    private function safeName(?string $name): ?string
+    {
+        if ($name === null) {
+            return null;
+        }
+
+        // Normalize Windows separators and drop NUL so basename() strips every path
+        // component and any leading `../` on all platforms; trim surrounding space.
+        $base = trim(basename(str_replace(["\0", '\\'], ['', '/'], $name)));
+
+        if ($base === '' || $base === '.' || $base === '..') {
+            return null;
+        }
+
+        return $base;
+    }
+
+    /**
      * @return array<string, string>
      */
     private function headers(?string $downloadPassword): array
     {
-        return $downloadPassword !== null ? ['X-Oc-Download-Password' => $downloadPassword] : [];
+        $password = $downloadPassword ?? $this->downloadPassword;
+
+        return $password !== null ? ['X-Oc-Download-Password' => $password] : [];
     }
 }
