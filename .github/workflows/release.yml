@@ -1,0 +1,56 @@
+name: Release
+
+# Runs when a version tag is pushed (e.g. `git push origin v10.2.0`).
+# 1. Guards against version drift: the tag MUST equal Api2Convert::VERSION.
+# 2. Re-runs validation + tests against the exact tagged commit.
+# 3. Notifies Packagist to update — but only if PACKAGIST_TOKEN is configured.
+#    (Alternatively, install the Packagist GitHub App for hands-off auto-update.)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Verify tag & publish
+    runs-on: ubuntu-latest
+    env:
+      PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+      PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Tag must equal Api2Convert::VERSION
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -oE "VERSION = '[^']+'" src/Api2Convert.php | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          echo "git tag: ${tag} | Api2Convert::VERSION: ${version}"
+          if [ "${tag}" != "${version}" ]; then
+            echo "::error::Tag '${tag}' does not match Api2Convert::VERSION '${version}'. Bump the constant, then re-tag."
+            exit 1
+          fi
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - run: composer install --no-interaction --no-progress
+
+      - name: Tests
+        run: vendor/bin/phpunit --testsuite unit
+
+      - name: Notify Packagist (only if a token is configured)
+        if: env.PACKAGIST_TOKEN != ''
+        run: |
+          curl -sSf -XPOST -H 'content-type: application/json' \
+            "https://packagist.org/api/update-package?username=${PACKAGIST_USERNAME}&apiToken=${PACKAGIST_TOKEN}" \
+            -d '{"repository":{"url":"https://github.com/QaamGo/api2convert-php"}}'
+          echo "Packagist update requested."
