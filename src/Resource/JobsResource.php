@@ -46,7 +46,7 @@ final class JobsResource
 
     public function get(string $jobId): Job
     {
-        return Job::fromArray($this->transport->request('GET', "/jobs/{$jobId}"));
+        return Job::fromArray($this->transport->request('GET', '/jobs/' . Transport::segment($jobId)));
     }
 
     /**
@@ -72,7 +72,7 @@ final class JobsResource
      */
     public function update(string $jobId, array $payload): Job
     {
-        return Job::fromArray($this->transport->request('PATCH', "/jobs/{$jobId}", $payload));
+        return Job::fromArray($this->transport->request('PATCH', '/jobs/' . Transport::segment($jobId), $payload));
     }
 
     /**
@@ -88,7 +88,7 @@ final class JobsResource
      */
     public function cancel(string $jobId): void
     {
-        $this->transport->request('DELETE', "/jobs/{$jobId}");
+        $this->transport->request('DELETE', '/jobs/' . Transport::segment($jobId));
     }
 
     /**
@@ -99,7 +99,9 @@ final class JobsResource
      */
     public function addInput(string $jobId, array $input): InputFile
     {
-        return InputFile::fromArray($this->transport->request('POST', "/jobs/{$jobId}/input", $input));
+        return InputFile::fromArray(
+            $this->transport->request('POST', '/jobs/' . Transport::segment($jobId) . '/input', $input)
+        );
     }
 
     /**
@@ -159,6 +161,9 @@ final class JobsResource
      */
     public function outputs(string $jobId): array
     {
-        return Data::mapObjects($this->transport->request('GET', "/jobs/{$jobId}/output"), OutputFile::fromArray(...));
+        return Data::mapObjects(
+            $this->transport->request('GET', '/jobs/' . Transport::segment($jobId) . '/output'),
+            OutputFile::fromArray(...),
+        );
     }
 }

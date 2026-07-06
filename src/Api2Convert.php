@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Api2Convert;
 
+use Api2Convert\Exception\ConfigurationException;
 use Api2Convert\Http\Config;
 use Api2Convert\Http\Transport;
 use Api2Convert\Model\Job;
@@ -70,7 +71,7 @@ final class Api2Convert
     ) {
         $apiKey = $apiKey !== '' ? $apiKey : (string) (getenv('API2CONVERT_API_KEY') ?: '');
         if ($apiKey === '') {
-            throw new \InvalidArgumentException(
+            throw new ConfigurationException(
                 'No API key provided. Pass it to the constructor or set the API2CONVERT_API_KEY environment variable.'
             );
         }
@@ -81,6 +82,13 @@ final class Api2Convert
             'timeout' => $config->timeout,
             'connect_timeout' => $config->timeout,
             'http_errors' => false,
+            // Never let Guzzle follow a 3xx transparently: our custom X-Oc-Api-Key /
+            // X-Oc-Token / X-Oc-Download-Password secrets ride in headers that Guzzle's
+            // redirect middleware forwards across a cross-host hop, so an
+            // auto-following client could leak them to a redirect target. The download
+            // path re-implements the one legitimate (passwordless) redirect manually in
+            // {@see Transport::download()}.
+            'allow_redirects' => false,
         ]);
 
         $this->transport = new Transport(

@@ -41,7 +41,7 @@ final class PresetsResource
 
     public function get(string $presetId): Preset
     {
-        return Preset::fromArray($this->transport->request('GET', "/presets/{$presetId}"));
+        return Preset::fromArray($this->transport->request('GET', '/presets/' . Transport::segment($presetId)));
     }
 
     /**
@@ -49,11 +49,13 @@ final class PresetsResource
      */
     public function update(string $presetId, array $payload): Preset
     {
-        return Preset::fromArray($this->transport->request('PATCH', "/presets/{$presetId}", $payload));
+        return Preset::fromArray(
+            $this->transport->request('PATCH', '/presets/' . Transport::segment($presetId), $payload)
+        );
     }
 
     public function delete(string $presetId): void
     {
-        $this->transport->request('DELETE', "/presets/{$presetId}");
+        $this->transport->request('DELETE', '/presets/' . Transport::segment($presetId));
     }
 }

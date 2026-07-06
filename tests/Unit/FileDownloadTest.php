@@ -6,7 +6,9 @@ namespace Api2Convert\Tests\Unit;
 
 use Api2Convert\Model\OutputFile;
 use Api2Convert\Tests\TestCase;
+use GuzzleHttp\Psr7\FnStream;
 use GuzzleHttp\Psr7\Response;
+use GuzzleHttp\Psr7\Utils;
 
 final class FileDownloadTest extends TestCase
 {
@@ -57,6 +59,38 @@ final class FileDownloadTest extends TestCase
         $path = $this->client()->download($output)->save($this->dir . '/');
 
         self::assertSame($this->dir . DIRECTORY_SEPARATOR . 'output', $path);
+    }
+
+    public function testMidTransferErrorLeavesNoPartialFile(): void
+    {
+        // A stream that hands back some bytes and then fails mid-read simulates a
+        // dropped connection during download.
+        $chunks = ['PARTIAL-'];
+        $body = FnStream::decorate(Utils::streamFor(''), [
+            'eof' => static fn (): bool => false,
+            'read' => static function (int $length) use (&$chunks): string {
+                if ($chunks !== []) {
+                    return array_shift($chunks);
+                }
+
+                throw new \RuntimeException('connection reset mid-stream');
+            },
+        ]);
+        $this->http->addResponse(new Response(200, [], $body));
+
+        $output = new OutputFile(id: 'o', uri: 'https://dl.example.com/x', filename: 'result.pdf');
+        $target = $this->dir . DIRECTORY_SEPARATOR . 'result.pdf';
+
+        try {
+            $this->client()->download($output)->save($this->dir . '/');
+            self::fail('Expected the mid-stream failure to propagate.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('mid-stream', $e->getMessage());
+        }
+
+        // The partially-written file must have been removed, not left masquerading as
+        // a complete download.
+        self::assertFileDoesNotExist($target);
     }
 
     private function removeDir(string $dir): void

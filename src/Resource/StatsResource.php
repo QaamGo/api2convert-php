@@ -24,7 +24,10 @@ final class StatsResource
      */
     public function day(string $day, string $filter = 'all'): array
     {
-        return $this->transport->request('GET', "/stats/day/{$day}/{$filter}");
+        return $this->transport->request(
+            'GET',
+            '/stats/day/' . Transport::segment($day) . '/' . Transport::segment($filter),
+        );
     }
 
     /**
@@ -33,7 +36,10 @@ final class StatsResource
      */
     public function month(string $month, string $filter = 'all'): array
     {
-        return $this->transport->request('GET', "/stats/month/{$month}/{$filter}");
+        return $this->transport->request(
+            'GET',
+            '/stats/month/' . Transport::segment($month) . '/' . Transport::segment($filter),
+        );
     }
 
     /**
@@ -42,6 +48,9 @@ final class StatsResource
      */
     public function year(string $year, string $filter = 'all'): array
     {
-        return $this->transport->request('GET', "/stats/year/{$year}/{$filter}");
+        return $this->transport->request(
+            'GET',
+            '/stats/year/' . Transport::segment($year) . '/' . Transport::segment($filter),
+        );
     }
 }

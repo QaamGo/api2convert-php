@@ -53,6 +53,7 @@ final class FileDownload
         $source = $this->transport->download($this->output->uri, $this->headers($downloadPassword));
         $handle = fopen($target, 'w');
         if ($handle === false) {
+            $source->close();
             throw new Api2ConvertException("Could not open file for writing: {$target}");
         }
 
@@ -60,10 +61,20 @@ final class FileDownload
             while (!$source->eof()) {
                 fwrite($handle, $source->read(1 << 16));
             }
-        } finally {
+        } catch (\Throwable $e) {
+            // A mid-transfer failure must not leave a truncated file masquerading as a
+            // complete download — remove the partial target before rethrowing.
             fclose($handle);
             $source->close();
+            if (is_file($target)) {
+                @unlink($target);
+            }
+
+            throw $e;
         }
+
+        fclose($handle);
+        $source->close();
 
         return $target;
     }
