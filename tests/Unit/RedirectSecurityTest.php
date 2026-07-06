@@ -113,11 +113,28 @@ final class RedirectSecurityTest extends TestCase
      */
     public static function relativeLocationProvider(): array
     {
+        // [base download URI, Location header value, expected resolved absolute URL]
         return [
-            'absolute'          => ['https://dl.example.com/a/file', 'https://cdn.example.com/x', 'https://cdn.example.com/x'],
-            'root-relative'     => ['https://dl.example.com/a/file', '/real',                    'https://dl.example.com/real'],
-            'path-relative'     => ['https://dl.example.com/a/file', 'real',                     'https://dl.example.com/a/real'],
-            'protocol-relative' => ['https://dl.example.com/a/file', '//cdn.example.com/x',      'https://cdn.example.com/x'],
+            'absolute' => [
+                'https://dl.example.com/a/file',
+                'https://cdn.example.com/x',
+                'https://cdn.example.com/x',
+            ],
+            'root-relative' => [
+                'https://dl.example.com/a/file',
+                '/real',
+                'https://dl.example.com/real',
+            ],
+            'path-relative' => [
+                'https://dl.example.com/a/file',
+                'real',
+                'https://dl.example.com/a/real',
+            ],
+            'protocol-relative' => [
+                'https://dl.example.com/a/file',
+                '//cdn.example.com/x',
+                'https://cdn.example.com/x',
+            ],
         ];
     }
 }
