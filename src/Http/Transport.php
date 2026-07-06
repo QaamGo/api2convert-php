@@ -35,6 +35,9 @@ final class Transport
     private const RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
     private const MAX_BACKOFF_SECONDS = 8.0;
 
+    /** How many redirects a passwordless download may follow before giving up. */
+    private const MAX_DOWNLOAD_REDIRECTS = 5;
+
     /**
      * Upper bound for an honored `Retry-After`. A server (or misconfigured proxy)
      * asking for an absurd delay can't stall a worker for hours — we never sleep
@@ -91,7 +94,7 @@ final class Transport
         array $query = [],
         array $headers = [],
     ): array {
-        $request = $this->requestFactory->createRequest($method, $this->url($path, $query))
+        $request = $this->createRequest($method, $this->url($path, $query))
             ->withHeader('X-Oc-Api-Key', $this->config->apiKey);
 
         foreach ($headers as $name => $value) {
@@ -172,6 +175,18 @@ final class Transport
     {
         $this->ensureSuccessful($response);
 
+        // The default client is built with redirects disabled so a secret header
+        // (X-Oc-Api-Key / X-Oc-Token) can never ride a cross-host 3xx. On this JSON
+        // path that leaves an un-followed redirect as a <400 "success" whose body
+        // would decode to an empty model — surface it as a typed error instead of
+        // silently returning nothing. (The download path handles 3xx itself.)
+        $status = $response->getStatusCode();
+        if ($status >= 300 && $status < 400) {
+            throw new NetworkException(
+                "API2Convert returned an unexpected redirect (HTTP {$status}); the request was not followed.",
+            );
+        }
+
         $raw = (string) $response->getBody();
         if ($raw === '') {
             return [];
@@ -229,19 +244,69 @@ final class Transport
      * Download a file from a (self-contained) URL and return its body stream.
      * Used for output downloads — these URLs need no API key.
      *
+     * A request carrying any `X-Oc-*` secret header (e.g. a download password) must
+     * not follow redirects: the default client is built with `allow_redirects` off
+     * so a secret can never ride a cross-host 3xx (Guzzle would forward custom
+     * headers across the hop). A plain, passwordless download may follow a legitimate
+     * storage/CDN redirect, which we do manually here — dropping any `X-Oc-*` header
+     * on a cross-origin hop as a belt-and-suspenders guard. When a secret-bearing
+     * request is redirected the 3xx is surfaced as a {@see NetworkException} so a
+     * redirect body never lands on disk as a silently-corrupt file.
+     *
      * @param array<string, string> $headers
      */
     public function download(string $uri, array $headers = []): \Psr\Http\Message\StreamInterface
     {
-        $request = $this->requestFactory->createRequest('GET', $uri);
-        foreach ($headers as $name => $value) {
-            $request = $request->withHeader($name, $value);
+        $carriesSecret = $this->carriesSecret($headers);
+        $maxRedirects = $carriesSecret ? 0 : self::MAX_DOWNLOAD_REDIRECTS;
+
+        $currentUri = $uri;
+        $currentHeaders = $headers;
+
+        for ($hop = 0; true; $hop++) {
+            $request = $this->createRequest('GET', $currentUri);
+            foreach ($currentHeaders as $name => $value) {
+                $request = $request->withHeader($name, $value);
+            }
+
+            $response = $this->send($request);
+            $this->ensureSuccessful($response);
+
+            $status = $response->getStatusCode();
+            if ($status < 300 || $status >= 400) {
+                return $response->getBody();
+            }
+
+            // A 3xx here means either a secret-bearing request (which we refuse to
+            // follow) or a passwordless download that has exhausted its redirect
+            // budget. Either way, returning the redirect body would write a corrupt
+            // file — surface it as a typed error instead.
+            $location = $response->getHeaderLine('Location');
+            if ($hop >= $maxRedirects || $location === '') {
+                throw new NetworkException(
+                    'The download did not resolve: a redirect was not followed'
+                    . ($carriesSecret ? ' because the request carried a secret header.' : '.')
+                );
+            }
+
+            $nextUri = $this->resolveLocation($currentUri, $location);
+            if ($this->sameOrigin($currentUri, $nextUri) === false) {
+                $currentHeaders = $this->stripSecretHeaders($currentHeaders);
+            }
+            $currentUri = $nextUri;
         }
+    }
 
-        $response = $this->send($request);
-        $this->ensureSuccessful($response);
-
-        return $response->getBody();
+    /**
+     * Percent-encode a single dynamic path segment (job/preset id, stats period or
+     * filter) so a value containing `/`, `?`, `#` or a space cannot break out of its
+     * segment and reshape the request path. The fixed `/` separators the caller
+     * writes between segments are left intact — only the interpolated value is passed
+     * here. Query parameters are encoded separately by {@see url()}.
+     */
+    public static function segment(string $value): string
+    {
+        return rawurlencode($value);
     }
 
     /**
@@ -354,5 +419,107 @@ final class Transport
         if ($body->isSeekable()) {
             $body->rewind();
         }
+    }
+
+    /**
+     * Build a PSR-7 request, wrapping a malformed URL so it surfaces as a typed
+     * {@see NetworkException} inside the SDK hierarchy rather than a raw
+     * \InvalidArgumentException escaping from the PSR-17 factory / URI parser.
+     */
+    private function createRequest(string $method, string $uri): RequestInterface
+    {
+        try {
+            return $this->requestFactory->createRequest($method, $uri);
+        } catch (\InvalidArgumentException $e) {
+            throw new NetworkException('Invalid request URL: ' . $uri, 0, $e);
+        }
+    }
+
+    /**
+     * @param array<string, string> $headers
+     */
+    private function carriesSecret(array $headers): bool
+    {
+        foreach (array_keys($headers) as $name) {
+            if (stripos($name, 'x-oc-') === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Drop every `X-Oc-*` secret header so it cannot ride a cross-origin redirect.
+     *
+     * @param array<string, string> $headers
+     * @return array<string, string>
+     */
+    private function stripSecretHeaders(array $headers): array
+    {
+        return array_filter(
+            $headers,
+            static fn (string $name): bool => stripos($name, 'x-oc-') !== 0,
+            ARRAY_FILTER_USE_KEY,
+        );
+    }
+
+    /**
+     * Resolve a (possibly relative) `Location` against the URL it came from.
+     */
+    private function resolveLocation(string $base, string $location): string
+    {
+        if (preg_match('#^https?://#i', $location) === 1) {
+            return $location;
+        }
+
+        $parts = parse_url($base);
+        if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
+            return $location;
+        }
+
+        // A protocol-relative Location ("//host/path") keeps the current scheme but
+        // carries its own host — must be handled before the root-relative branch,
+        // which would otherwise glue it onto the current origin as a bogus path.
+        if (str_starts_with($location, '//')) {
+            return $parts['scheme'] . ':' . $location;
+        }
+
+        $origin = $parts['scheme'] . '://' . $parts['host'];
+        if (isset($parts['port'])) {
+            $origin .= ':' . $parts['port'];
+        }
+
+        if (str_starts_with($location, '/')) {
+            return $origin . $location;
+        }
+
+        $path = $parts['path'] ?? '/';
+        $dir = substr($path, 0, (int) strrpos($path, '/') + 1);
+
+        return $origin . $dir . $location;
+    }
+
+    /**
+     * Whether two URLs share the same scheme + host + port (same origin).
+     */
+    private function sameOrigin(string $a, string $b): bool
+    {
+        return $this->origin($a) === $this->origin($b);
+    }
+
+    private function origin(string $uri): string
+    {
+        $parts = parse_url($uri);
+        if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
+            return '';
+        }
+
+        $origin = strtolower($parts['scheme'] . '://' . $parts['host']);
+        if (isset($parts['port'])) {
+            $origin .= ':' . $parts['port'];
+        }
+
+        return $origin;
     }
 }
