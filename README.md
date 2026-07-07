@@ -217,11 +217,27 @@ composer install
 composer check        # phpcs + phpstan + phpunit
 ```
 
-Live conformance tests run against the real API when `API2CONVERT_API_KEY` is set:
+The [live conformance suite](tests/Live/ConversionConformanceTest.php) runs
+against the real API when `API2CONVERT_API_KEY` is set (it auto-skips otherwise):
 
 ```bash
 API2CONVERT_API_KEY=... vendor/bin/phpunit --testsuite live
 ```
+
+It doubles as an executable, end-to-end tour of the SDK — each test is a
+self-contained usage example:
+
+1. **Convert a remote URL** — the one-call happy path.
+2. **Upload and convert a local file** — the multipart upload path.
+3. **Convert with options** — apply target-specific conversion options.
+4. **Discover the catalog** — list conversions and option schemas.
+5. **Drive the job lifecycle by hand** — create → add input → start → wait → inspect.
+6. **Handle a validation error** — an unknown target is a typed error.
+7. **Handle an authentication error** — a bad key is typed and never leaked.
+
+It runs automatically against the real API on every release tag (see
+`.github/workflows/live-conformance.yml`), so a published version is always
+verified end to end. Runnable single-purpose examples live in [`examples/`](examples/).
 
 This SDK is hand-written and kept in sync with the API by an AI agent — see [`AGENTS.md`](AGENTS.md)
 and [`docs/SDK_CONTRACT.md`](docs/SDK_CONTRACT.md). Notable changes are recorded in
