@@ -224,20 +224,43 @@ against the real API when `API2CONVERT_API_KEY` is set (it auto-skips otherwise)
 API2CONVERT_API_KEY=... vendor/bin/phpunit --testsuite live
 ```
 
-It doubles as an executable, end-to-end tour of the SDK — each test is a
-self-contained usage example:
-
-1. **Convert a remote URL** — the one-call happy path.
-2. **Upload and convert a local file** — the multipart upload path.
-3. **Convert with options** — apply target-specific conversion options.
-4. **Discover the catalog** — list conversions and option schemas.
-5. **Drive the job lifecycle by hand** — create → add input → start → wait → inspect.
-6. **Handle a validation error** — an unknown target is a typed error.
-7. **Handle an authentication error** — a bad key is typed and never leaked.
-
 It runs automatically against the real API on every release tag (see
 `.github/workflows/live-conformance.yml`), so a published version is always
-verified end to end. Runnable single-purpose examples live in [`examples/`](examples/).
+verified end to end. Each test mirrors one of the runnable examples below, plus
+two negative tests (an unknown target is a typed validation error; a bad key is a
+typed auth error that never leaks the key).
+
+## Examples
+
+Every example in [`examples/`](examples/) is a complete, self-contained program
+that reads your key from `API2CONVERT_API_KEY`. Run any of them with, e.g.:
+
+```bash
+API2CONVERT_API_KEY=your-key php examples/quickstart.php
+```
+
+| Example | What it shows |
+|---|---|
+| [`quickstart.php`](examples/quickstart.php) | Convert a remote JPG to PNG, look the job up, download it |
+| [`convert-files.php`](examples/convert-files.php) | Browse the conversions catalog, then convert |
+| [`uploading-files.php`](examples/uploading-files.php) | One-call upload + convert of a local file |
+| [`job-lifecycle.php`](examples/job-lifecycle.php) | Drive create → add input → start → wait → outputs by hand |
+| [`add-watermark.php`](examples/add-watermark.php) | Stamp a PNG watermark onto a PDF (two inputs) |
+| [`create-thumbnails.php`](examples/create-thumbnails.php) | Render the first PDF page as a PNG thumbnail |
+| [`compress-files.php`](examples/compress-files.php) | Compress a JPG at a high compression level |
+| [`create-archives.php`](examples/create-archives.php) | Bundle two remote files into a ZIP |
+| [`create-hashes.php`](examples/create-hashes.php) | Compute the SHA-256 of a remote ZIP |
+| [`extract-assets.php`](examples/extract-assets.php) | Extract embedded assets from a DOCX |
+| [`file-analysis.php`](examples/file-analysis.php) | Extract a JPG's metadata as JSON |
+| [`compare-files.php`](examples/compare-files.php) | Diff two images (SSIM) with a red overlay |
+| [`capture-website.php`](examples/capture-website.php) | Screenshot a website and deliver a PNG |
+| [`audio-operations.php`](examples/audio-operations.php) | Transcode a WAV to stereo 192 kbps AAC |
+| [`image-operations.php`](examples/image-operations.php) | Resize a JPG, cropping to keep the aspect ratio |
+| [`webhooks.php`](examples/webhooks.php) | Start an async conversion with a callback, and verify the receipt |
+| [`presets.php`](examples/presets.php) | List saved conversion presets |
+| [`statistics.php`](examples/statistics.php) | Read API usage for a month |
+| [`rate-limits.php`](examples/rate-limits.php) | Inspect the account's contracts (quota/limits) |
+| [`authentication.php`](examples/authentication.php) | Verify the key works by listing jobs |
 
 This SDK is hand-written and kept in sync with the API by an AI agent — see [`AGENTS.md`](AGENTS.md)
 and [`docs/SDK_CONTRACT.md`](docs/SDK_CONTRACT.md). Notable changes are recorded in
