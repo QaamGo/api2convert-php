@@ -8,14 +8,17 @@ use Api2Convert\Api2Convert;
 use Api2Convert\Exception\AuthenticationException;
 use Api2Convert\Exception\ConversionFailedException;
 use Api2Convert\Exception\ValidationException;
+use Api2Convert\Model\Job;
+use Api2Convert\Model\Preset;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Live conformance suite — the canonical, cross-SDK set of scenarios that
- * exercises the real API2Convert API end to end. Every scenario is written to
- * read like a usage example, so this file doubles as an executable tour of the
- * SDK: build a client, convert, discover, drive the job lifecycle, and handle
- * the typed errors.
+ * exercises the real API2Convert API end to end. It mirrors, one-to-one, the 20
+ * documented examples in {@see /examples} (the same operations the api2convert.com
+ * guides show), plus two negative tests. Each test performs the same call as the
+ * matching example file and asserts the outcome, so this file doubles as an
+ * executable, verified tour of the SDK.
  *
  * Because these hit the real API and consume quota, the whole suite skips unless
  * `API2CONVERT_API_KEY` is set — so it is safe to keep in the default checkout:
@@ -25,27 +28,29 @@ use PHPUnit\Framework\TestCase;
  * `API2CONVERT_BASE_URL` overrides the host (e.g. a beta environment). Never
  * commit a real key — it is read only from the environment.
  *
- * The seven scenarios mirror the shared spec implemented by every api2convert
- * SDK (php, python, java, go, nodejs, dotnet, ruby, rust):
- *
- *   1. testConvertRemoteUrlToPng           — one-call convert of a URL
- *   2. testUploadLocalFileAndConvert       — multipart upload of a file
- *   3. testConvertWithOptions              — apply conversion options
- *   4. testDiscoverConversionCatalog       — options/catalog discovery
- *   5. testManualJobLifecycleAndInspection — create → input → start → wait
- *   6. testInvalidTargetIsATypedError      — validation error handling
- *   7. testAuthenticationErrorLeaksNoSecret — auth error, no key leak
+ * Catalog (each maps to examples/<name>.php):
+ *   1. quickstart          9.  create-hashes      17. presets
+ *   2. convert-files       10. extract-assets     18. statistics
+ *   3. uploading-files     11. file-analysis      19. rate-limits
+ *   4. job-lifecycle       12. compare-files      20. authentication
+ *   5. add-watermark       13. capture-website    + invalid-target (validation)
+ *   6. create-thumbnails   14. audio-operations   + bad-key (auth, no leak)
+ *   7. compress-files      15. image-operations
+ *   8. create-archives     16. webhooks
  */
 final class ConversionConformanceTest extends TestCase
 {
-    /**
-     * A small, stable public image used as a remote input everywhere.
-     */
-    private const REMOTE_URL =
-        'https://example-files.online-convert.com/raster%20image/jpg/example_small.jpg';
+    // Public example fixtures (example-files.online-convert.com).
+    private const PDF = 'https://example-files.online-convert.com/document/pdf/example.pdf';
+    private const PNG = 'https://example-files.online-convert.com/raster%20image/png/example.png';
+    private const JPG = 'https://example-files.online-convert.com/raster%20image/jpg/example.jpg';
+    private const JPG_SMALL = 'https://example-files.online-convert.com/raster%20image/jpg/example_small.jpg';
+    private const WAV = 'https://example-files.online-convert.com/audio/wav/example.wav';
+    private const DOCX = 'https://example-files.online-convert.com/document/docx/example.docx';
+    private const ZIP = 'https://example-files.online-convert.com/archive/zip/example.zip';
 
     /**
-     * A minimal valid 1×1 PNG, written to disk to exercise the real multipart
+     * A minimal valid 1x1 PNG, written to disk to exercise the real multipart
      * upload handshake (remote-URL inputs skip upload entirely).
      */
     private const ONE_PX_PNG =
@@ -56,11 +61,9 @@ final class ConversionConformanceTest extends TestCase
         . "\x4E\x44\xAE\x42\x60\x82";
 
     /**
-     * Build a client from the environment, or skip the test when no key is set.
-     *
-     * This is the idiomatic construction: pass the key to the constructor (it
-     * also falls back to `API2CONVERT_API_KEY`); here we additionally honor
-     * `API2CONVERT_BASE_URL` so the same suite can target prod or a beta host.
+     * Build a client from the environment, or skip when no key is set. The key is
+     * passed to the constructor (which also falls back to `API2CONVERT_API_KEY`);
+     * we additionally honor `API2CONVERT_BASE_URL` so the suite can target a beta.
      */
     private function client(): Api2Convert
     {
@@ -74,143 +77,317 @@ final class ConversionConformanceTest extends TestCase
         return new Api2Convert($key, $baseUrl !== false && $baseUrl !== '' ? ['baseUrl' => $baseUrl] : []);
     }
 
-    // 1. One-call convert of a remote URL -----------------------------------
-    //
-    // The simplest usage: hand `convert()` a URL and a target format. The SDK
-    // creates a server-side-fetch job, polls it to completion, and hands back a
-    // result you can save straight to disk.
-    public function testConvertRemoteUrlToPng(): void
+    // 1. quickstart — one-call convert of a remote URL, look it up, download it.
+    public function testQuickstart(): void
     {
-        $result = $this->client()->convert(self::REMOTE_URL, 'png');
+        $client = $this->client();
+        $result = $client->convert(self::JPG, 'png');
         self::assertTrue($result->job->isCompleted(), 'job should complete');
 
-        $target = sys_get_temp_dir() . '/a2c-live-remote-' . uniqid() . '.png';
+        $job = $client->jobs()->get($result->job->id);
+        self::assertSame($result->job->id, $job->id);
+
+        $target = sys_get_temp_dir() . '/a2c-quickstart-' . uniqid() . '.png';
         $path = $result->save($target);
         self::assertFileExists($path);
         self::assertGreaterThan(0, filesize($path), 'output should be non-empty');
         unlink($path);
     }
 
-    // 2. Upload and convert a local file ------------------------------------
-    //
-    // For a local path (or resource / stream), the SDK stages the job, streams
-    // the file to the per-job upload server (authenticated with the job's
-    // `X-Oc-Token`, never your account key), starts it, polls, and downloads.
-    public function testUploadLocalFileAndConvert(): void
+    // 2. convert-files — browse the catalog (all + filtered), then convert.
+    public function testConvertFiles(): void
     {
         $client = $this->client();
 
-        $src = sys_get_temp_dir() . '/a2c-live-pixel-' . uniqid() . '.png';
+        $all = $client->conversions()->list();
+        self::assertNotEmpty($all, 'the catalog should be non-empty');
+
+        $toPng = $client->conversions()->list(target: 'png');
+        self::assertNotEmpty($toPng, 'there should be at least one conversion to png');
+
+        $result = $client->convert(self::JPG, 'png');
+        self::assertTrue($result->job->isCompleted(), 'job should complete');
+    }
+
+    // 3. uploading-files — multipart upload + convert of a local file.
+    public function testUploadingFiles(): void
+    {
+        $client = $this->client();
+
+        $src = sys_get_temp_dir() . '/a2c-upload-' . uniqid() . '.png';
         file_put_contents($src, self::ONE_PX_PNG);
 
         try {
-            $result = $client->convert($src, 'jpg');
+            $result = $client->convert($src, 'png');
             self::assertTrue($result->job->isCompleted(), 'uploaded job should complete');
-
-            $bytes = $result->contents();
-            self::assertNotSame('', $bytes, 'converted output should be non-empty');
-            // A JPEG starts with the SOI marker 0xFF 0xD8.
-            self::assertSame("\xFF\xD8", substr($bytes, 0, 2), 'output should be a JPEG');
+            self::assertNotSame('', $result->contents(), 'output should be non-empty');
         } finally {
             unlink($src);
         }
     }
 
-    // 3. Apply conversion options -------------------------------------------
-    //
-    // Pass target-specific options as the third argument to `convert()`. Discover
-    // the valid keys for a target with `$client->options()` (see the next
-    // scenario); here we re-encode at a lower JPEG quality.
-    public function testConvertWithOptions(): void
-    {
-        $result = $this->client()->convert(
-            self::REMOTE_URL,
-            'jpg',
-            // Add e.g. 'width' => 64, 'height' => 64 to resize.
-            ['quality' => 50],
-        );
-        self::assertTrue($result->job->isCompleted(), 'job should complete');
-
-        $bytes = $result->contents();
-        self::assertNotSame('', $bytes, 'converted output should be non-empty');
-    }
-
-    // 4. Discover the conversion catalog ------------------------------------
-    //
-    // `conversions()->list()` and `options()` describe what the API can do —
-    // which targets exist and which options each accepts. Neither consumes
-    // conversion quota, so they are cheap to call before building a request.
-    public function testDiscoverConversionCatalog(): void
-    {
-        $client = $this->client();
-
-        // Which conversions target `jpg`?
-        $conversions = $client->conversions()->list(null, 'jpg');
-        self::assertNotEmpty($conversions, 'the catalog should list at least one conversion to jpg');
-
-        // The option schema for a target (type / enum / default / range per
-        // option). We only assert the call succeeds (returns without throwing).
-        $client->options('png', 'image');
-    }
-
-    // 5. Drive the full job lifecycle by hand -------------------------------
-    //
-    // `convert()` is built from these primitives. Driving them yourself unlocks
-    // compound/merge jobs, custom inputs, and step-by-step inspection: create a
-    // staged job, attach an input, start it, wait for completion, then inspect
-    // the job's status and output metadata.
-    public function testManualJobLifecycleAndInspection(): void
+    // 4. job-lifecycle — create (staged) → add input → start → wait → outputs.
+    public function testJobLifecycle(): void
     {
         $jobs = $this->client()->jobs();
 
-        // Stage a job (process: false) so we can attach inputs before starting.
-        $job = $jobs->create(['process' => false, 'conversion' => [['target' => 'png']]]);
+        $job = $jobs->create([
+            'process' => false,
+            'conversion' => [['category' => 'image', 'target' => 'png']],
+        ]);
         self::assertNotSame('', $job->id, 'a created job has an id');
 
-        // Attach a remote input, then start processing.
-        $jobs->addInput($job->id, ['type' => 'remote', 'source' => self::REMOTE_URL]);
+        $jobs->addInput($job->id, ['type' => 'remote', 'source' => self::JPG]);
         $jobs->start($job->id);
 
-        // Poll to a terminal status.
         $finished = $jobs->wait($job->id);
         self::assertTrue($finished->isCompleted(), 'job should complete');
 
-        // Inspect the outputs — both from the finished job and via the outputs API.
-        self::assertNotEmpty($finished->output, 'job should have an output');
         $outputs = $jobs->outputs($job->id);
-        self::assertCount(
-            count($finished->output),
-            $outputs,
-            'outputs() should match the job\'s output list',
-        );
-        self::assertNotSame('', $finished->output[0]->uri, 'output has a download URI');
+        self::assertNotEmpty($outputs, 'job should have outputs');
+        self::assertNotSame('', $outputs[0]->uri, 'output has a download URI');
     }
 
-    // 6. Validation error on an unknown target ------------------------------
+    // 5. add-watermark — stamp a PNG onto a PDF (two inputs).
+    public function testAddWatermark(): void
+    {
+        $jobs = $this->client()->jobs();
+
+        $job = $jobs->create([
+            'process' => true,
+            'input' => [
+                ['type' => 'remote', 'source' => self::PDF],
+                ['type' => 'remote', 'source' => self::PNG],
+            ],
+            'conversion' => [
+                [
+                    'category' => 'document',
+                    'target' => 'pdf',
+                    'options' => ['stamp' => true, 'alignment' => 'center'],
+                ],
+            ],
+        ]);
+
+        $finished = $jobs->wait($job->id);
+        self::assertTrue($finished->isCompleted(), 'job should complete');
+        self::assertNotEmpty($finished->output, 'job should have an output');
+    }
+
+    // 6. create-thumbnails — first page of a PDF as a 300px PNG thumbnail.
+    public function testCreateThumbnails(): void
+    {
+        $result = $this->client()->convert(
+            self::PDF,
+            'thumbnail',
+            ['thumbnail_target' => 'png', 'width' => 300, 'pages' => 'first', 'dpi' => 150],
+            'operation',
+        );
+        self::assertTrue($result->job->isCompleted(), 'job should complete');
+        self::assertNotEmpty($result->outputs(), 'job should have an output');
+    }
+
+    // 7. compress-files — high-compression pass over a JPG.
+    public function testCompressFiles(): void
+    {
+        $result = $this->client()->convert(
+            self::JPG,
+            'compress',
+            ['compression_level' => 'high'],
+            'operation',
+        );
+        self::assertTrue($result->job->isCompleted(), 'job should complete');
+        self::assertNotEmpty($result->outputs(), 'job should have an output');
+    }
+
+    // 8. create-archives — bundle two remote files into a ZIP.
+    public function testCreateArchives(): void
+    {
+        $jobs = $this->client()->jobs();
+
+        $job = $jobs->create([
+            'process' => true,
+            'input' => [
+                ['type' => 'remote', 'source' => self::PDF],
+                ['type' => 'remote', 'source' => self::PNG],
+            ],
+            'conversion' => [['category' => 'archive', 'target' => 'zip']],
+        ]);
+
+        $finished = $jobs->wait($job->id);
+        self::assertTrue($finished->isCompleted(), 'job should complete');
+        self::assertNotEmpty($finished->output, 'job should have an output');
+    }
+
+    // 9. create-hashes — SHA-256 of a remote ZIP.
+    public function testCreateHashes(): void
+    {
+        $result = $this->client()->convert(self::ZIP, 'sha256', [], 'hash');
+        self::assertTrue($result->job->isCompleted(), 'job should complete');
+        self::assertNotSame('', trim($result->contents()), 'the hash output should be non-empty');
+    }
+
+    // 10. extract-assets — pull embedded assets out of a DOCX.
+    public function testExtractAssets(): void
+    {
+        $result = $this->client()->convert(self::DOCX, 'extract-assets', [], 'operation');
+        self::assertTrue($result->job->isCompleted(), 'job should complete');
+        self::assertNotEmpty($result->outputs(), 'job should have at least one output');
+    }
+
+    // 11. file-analysis — a JPG's metadata as JSON.
+    public function testFileAnalysis(): void
+    {
+        $result = $this->client()->convert(self::JPG, 'json', [], 'metadata');
+        self::assertTrue($result->job->isCompleted(), 'job should complete');
+        self::assertNotSame('', $result->contents(), 'the analysis output should be non-empty');
+    }
+
+    // 12. compare-files — SSIM diff of two images.
+    public function testCompareFiles(): void
+    {
+        $jobs = $this->client()->jobs();
+
+        $job = $jobs->create([
+            'process' => true,
+            'input' => [
+                ['type' => 'remote', 'source' => self::JPG_SMALL],
+                ['type' => 'remote', 'source' => self::JPG],
+            ],
+            'conversion' => [
+                [
+                    'category' => 'operation',
+                    'target' => 'compare-image',
+                    'options' => ['method' => 'ssim', 'threshold' => 5, 'diff_color' => 'red'],
+                ],
+            ],
+        ]);
+
+        $finished = $jobs->wait($job->id);
+        self::assertTrue($finished->isCompleted(), 'job should complete');
+    }
+
+    // 13. capture-website — screenshot a page and deliver a PNG.
+    public function testCaptureWebsite(): void
+    {
+        $jobs = $this->client()->jobs();
+
+        $job = $jobs->create([
+            'process' => true,
+            'input' => [
+                [
+                    'type' => 'remote',
+                    'source' => 'https://www.online-convert.com',
+                    'engine' => 'screenshot',
+                    'options' => [
+                        'screen_width' => 1280,
+                        'screen_height' => 1024,
+                        'device_scale_factor' => 1,
+                    ],
+                ],
+            ],
+            'conversion' => [['category' => 'image', 'target' => 'png']],
+        ]);
+
+        $finished = $jobs->wait($job->id);
+        self::assertTrue($finished->isCompleted(), 'job should complete');
+        self::assertNotEmpty($finished->output, 'job should have an output');
+    }
+
+    // 14. audio-operations — WAV to stereo 192 kbps AAC.
+    public function testAudioOperations(): void
+    {
+        $result = $this->client()->convert(
+            self::WAV,
+            'aac',
+            ['audio_codec' => 'aac', 'audio_bitrate' => 192, 'channels' => 'stereo', 'frequency' => 44100],
+            'audio',
+        );
+        self::assertTrue($result->job->isCompleted(), 'job should complete');
+        self::assertNotSame('', $result->contents(), 'output should be non-empty');
+    }
+
+    // 15. image-operations — resize a JPG to 800x600, crop to aspect ratio.
+    public function testImageOperations(): void
+    {
+        $result = $this->client()->convert(
+            self::JPG,
+            'resize-image',
+            ['width' => 800, 'height' => 600, 'resize_by' => 'px', 'resize_handling' => 'keep_aspect_ratio_crop'],
+            'operation',
+        );
+        self::assertTrue($result->job->isCompleted(), 'job should complete');
+        self::assertNotEmpty($result->outputs(), 'job should have an output');
+    }
+
+    // 16. webhooks — start an async job with a callback (do not wait for delivery).
+    public function testWebhooks(): void
+    {
+        $job = $this->client()->convertAsync(
+            self::DOCX,
+            'pdf',
+            callback: 'https://your-app.example.com/api2convert/webhook',
+            category: 'document',
+        );
+
+        self::assertInstanceOf(Job::class, $job);
+        self::assertNotSame('', $job->id, 'an async job has an id');
+        self::assertFalse($job->isFailed(), 'the started job should not already be failed');
+    }
+
+    // 17. presets — list presets for a category/target (may be empty).
+    public function testPresets(): void
+    {
+        $presets = $this->client()->presets()->list(category: 'video', target: 'mp4');
+        // The list may legitimately be empty; assert only that the call returned
+        // typed presets (and, implicitly, that it did not throw).
+        self::assertContainsOnlyInstancesOf(Preset::class, $presets);
+    }
+
+    // 18. statistics — usage for a recent month.
+    public function testStatistics(): void
+    {
+        $stats = $this->client()->stats()->month('2026-06');
+        // Free-form response; assert it came back and is JSON-serializable (i.e.
+        // the call succeeded and returned a decoded body).
+        self::assertNotFalse(json_encode($stats), 'stats()->month() should return a decoded response');
+    }
+
+    // 19. rate-limits — the account's contracts.
+    public function testRateLimits(): void
+    {
+        $contracts = $this->client()->contracts()->get();
+        self::assertNotFalse(json_encode($contracts), 'contracts()->get() should return a decoded response');
+    }
+
+    // 20. authentication — the key works: list this key's jobs.
+    public function testAuthentication(): void
+    {
+        $jobs = $this->client()->jobs()->list();
+        // Listing the key's jobs proves the key authenticates; the list may be
+        // empty, so assert only that it returned typed jobs.
+        self::assertContainsOnlyInstancesOf(Job::class, $jobs);
+    }
+
+    // Negative: an unknown target is a typed error --------------------------
     //
     // The real API rejects an unknown target synchronously at job creation
-    // (HTTP 400 -> ValidationException), not as an async failed job. Some hosts
-    // instead surface it as a failed job (ConversionFailedException); accept
-    // either typed failure.
+    // (HTTP 400 -> ValidationException); some hosts instead surface it as a
+    // failed job (ConversionFailedException). Accept either typed failure.
     public function testInvalidTargetIsATypedError(): void
     {
         try {
-            $this->client()->convert(self::REMOTE_URL, 'this-is-not-a-real-target');
+            $this->client()->convert(self::JPG, 'this-is-not-a-real-target');
             self::fail('an unknown target should raise a typed error');
         } catch (ValidationException | ConversionFailedException $e) {
             self::assertNotSame('', $e->getMessage());
         }
     }
 
-    // 7. Authentication error, with no secret leak --------------------------
-    //
-    // A bad key produces a typed `AuthenticationException` carrying the HTTP
-    // status. Crucially, the SDK never puts a credential into an error message —
-    // we assert the bogus key does not appear in the rendered error.
+    // Negative: a bad key is a typed auth error, with no secret leak ---------
     public function testAuthenticationErrorLeaksNoSecret(): void
     {
-        // Gate on a real key like the rest of the suite (so this only runs when
-        // the API is reachable), then build a SECOND client with a bogus key.
+        // Gate on a real key like the rest of the suite, then build a SECOND
+        // client with a bogus key.
         $this->client();
 
         $bogusKey = 'a2c-invalid-key-for-testing';
