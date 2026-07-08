@@ -37,7 +37,7 @@ use Psr\Http\Message\StreamInterface;
  */
 final class Api2Convert
 {
-    public const VERSION = '10.2.0';
+    public const VERSION = '10.2.1';
 
     private readonly Transport $transport;
     private readonly JobsResource $jobs;
