@@ -10,7 +10,8 @@ use Api2Convert\Http\Transport;
  * API usage statistics. The response shape is free-form, so these return the
  * decoded array as-is.
  *
- * `$filter` is either an API key to scope to, or `all`.
+ * `$filter` is `single` (only the calling API key) or `all` (every key on the account, the default).
+ * The request is scoped by the `X-Oc-Api-Key` header, so never pass a key as `$filter`.
  */
 final class StatsResource
 {
