@@ -16,7 +16,7 @@ use Api2Convert\Exception\AuthenticationException;
 use Api2Convert\Exception\Api2ConvertException;
 
 // The constructor reads API2CONVERT_API_KEY. Every request authenticates with it
-// via the X-Oc-Api-Key header — the SDK never logs it or puts it in an error.
+// via the X-Api2convert-Api-Key header — the SDK never logs it or puts it in an error.
 $client = new Api2Convert();
 
 try {

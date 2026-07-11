@@ -184,6 +184,6 @@ final class FileDownload
     {
         $password = $downloadPassword ?? $this->downloadPassword;
 
-        return $password !== null ? ['X-Oc-Download-Password' => $password] : [];
+        return $password !== null ? ['X-Api2convert-Download-Password' => $password] : [];
     }
 }

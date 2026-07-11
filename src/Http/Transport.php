@@ -102,7 +102,7 @@ final class Transport
         array $headers = [],
     ): array {
         $request = $this->createRequest($method, $this->url($path, $query))
-            ->withHeader('X-Oc-Api-Key', $this->config->apiKey);
+            ->withHeader('X-Api2convert-Api-Key', $this->config->apiKey);
 
         foreach ($headers as $name => $value) {
             $request = $request->withHeader($name, $value);
@@ -183,7 +183,7 @@ final class Transport
         $this->ensureSuccessful($response);
 
         // The default client is built with redirects disabled so a secret header
-        // (X-Oc-Api-Key / X-Oc-Token) can never ride a cross-host 3xx. On this JSON
+        // (X-Api2convert-Api-Key / X-Api2convert-Token) can never ride a cross-host 3xx. On this JSON
         // path that leaves an un-followed redirect as a <400 "success" whose body
         // would decode to an empty model — surface it as a typed error instead of
         // silently returning nothing. (The download path handles 3xx itself.)
@@ -251,11 +251,11 @@ final class Transport
      * Download a file from a (self-contained) URL and return its body stream.
      * Used for output downloads — these URLs need no API key.
      *
-     * A request carrying any `X-Oc-*` secret header (e.g. a download password) must
+     * A request carrying any `X-Api2convert-*` secret header (e.g. a download password) must
      * not follow redirects: the default client is built with `allow_redirects` off
      * so a secret can never ride a cross-host 3xx (Guzzle would forward custom
      * headers across the hop). A plain, passwordless download may follow a legitimate
-     * storage/CDN redirect, which we do manually here — dropping any `X-Oc-*` header
+     * storage/CDN redirect, which we do manually here — dropping any `X-Api2convert-*` header
      * on a cross-origin hop as a belt-and-suspenders guard. When a secret-bearing
      * request is redirected the 3xx is surfaced as a {@see NetworkException} so a
      * redirect body never lands on disk as a silently-corrupt file.
@@ -477,7 +477,7 @@ final class Transport
     private function carriesSecret(array $headers): bool
     {
         foreach (array_keys($headers) as $name) {
-            if (stripos($name, 'x-oc-') === 0) {
+            if (stripos($name, 'x-api2convert-') === 0) {
                 return true;
             }
         }
@@ -486,7 +486,7 @@ final class Transport
     }
 
     /**
-     * Drop every `X-Oc-*` secret header so it cannot ride a cross-origin redirect.
+     * Drop every `X-Api2convert-*` secret header so it cannot ride a cross-origin redirect.
      *
      * @param array<string, string> $headers
      * @return array<string, string>
@@ -495,7 +495,7 @@ final class Transport
     {
         return array_filter(
             $headers,
-            static fn (string $name): bool => stripos($name, 'x-oc-') !== 0,
+            static fn (string $name): bool => stripos($name, 'x-api2convert-') !== 0,
             ARRAY_FILTER_USE_KEY,
         );
     }

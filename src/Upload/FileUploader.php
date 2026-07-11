@@ -19,7 +19,7 @@ use Psr\Http\Message\StreamInterface;
  * This step is intentionally hand-written: it is NOT described by the OpenAPI
  * spec. It posts a `multipart/form-data` body (field `file`) to
  * `{job.server}/upload-file/{job.id}` and authenticates with the per-job
- * `x-oc-token` header — never the account API key. The body is streamed, so
+ * `x-api2convert-token` header — never the account API key. The body is streamed, so
  * large files do not have to be read into memory.
  *
  * @internal
@@ -57,7 +57,7 @@ final class FileUploader
 
         $url = rtrim($job->server, '/') . '/upload-file/' . $job->id;
         $request = $this->requestFactory->createRequest('POST', $url)
-            ->withHeader('X-Oc-Token', $job->token)
+            ->withHeader('X-Api2convert-Token', $job->token)
             ->withHeader('Content-Type', 'multipart/form-data; boundary=' . $multipart->getBoundary())
             ->withBody($multipart);
 

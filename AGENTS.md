@@ -61,7 +61,7 @@ junior-friendly surface — one-call `convert()` — and use AI to keep it curre
 
 - **The contract is law.** Public method names, signatures and semantics match `docs/SDK_CONTRACT.md`
   across every SDK language. Adapt only to PHP idiom.
-- **Upload uses the per-job `X-Oc-Token`, never the account key.** There is a test for this.
+- **Upload uses the per-job `X-Api2convert-Token`, never the account key.** There is a test for this.
 - **`convert()` stays one call** for the common case (path/URL/stream → `to` → `save()`).
 - **Transient failures retry; failures surface as typed exceptions.** Never leak a raw HTTP/transport
   error to the caller.

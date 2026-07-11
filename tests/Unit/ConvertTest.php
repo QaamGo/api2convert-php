@@ -33,7 +33,7 @@ final class ConvertTest extends TestCase
         $create = $this->requestAt(0);
         self::assertSame('POST', $create->getMethod());
         self::assertStringEndsWith('/jobs', (string) $create->getUri());
-        self::assertSame('test-key', $create->getHeaderLine('X-Oc-Api-Key'));
+        self::assertSame('test-key', $create->getHeaderLine('X-Api2convert-Api-Key'));
         $body = $this->bodyOf($create);
         self::assertTrue($body['process']);
         self::assertSame('png', $body['conversion'][0]['target']);
@@ -91,8 +91,8 @@ final class ConvertTest extends TestCase
         $upload = $this->requestAt(1);
         self::assertSame('POST', $upload->getMethod());
         self::assertSame('https://www2.api2convert.com/v2/upload-file/job-9', (string) $upload->getUri());
-        self::assertSame('tok-abc', $upload->getHeaderLine('X-Oc-Token'));
-        self::assertSame('', $upload->getHeaderLine('X-Oc-Api-Key'));
+        self::assertSame('tok-abc', $upload->getHeaderLine('X-Api2convert-Token'));
+        self::assertSame('', $upload->getHeaderLine('X-Api2convert-Api-Key'));
         self::assertStringContainsString('multipart/form-data', $upload->getHeaderLine('Content-Type'));
         self::assertStringContainsString('name="file"', (string) $upload->getBody());
 
@@ -174,7 +174,7 @@ final class ConvertTest extends TestCase
 
         // 2) ...and applied automatically on download — the caller re-supplies nothing
         self::assertSame('SECRET', $result->contents());
-        self::assertSame('hunter2', $this->requestAt(2)->getHeaderLine('X-Oc-Download-Password'));
+        self::assertSame('hunter2', $this->requestAt(2)->getHeaderLine('X-Api2convert-Download-Password'));
     }
 
     public function testExplicitDownloadPasswordOverridesRememberedOne(): void
@@ -190,7 +190,7 @@ final class ConvertTest extends TestCase
         $result = $this->client()->convert('https://example.com/a.docx', 'pdf', downloadPassword: 'hunter2');
         $result->contents('override-pw');
 
-        self::assertSame('override-pw', $this->requestAt(2)->getHeaderLine('X-Oc-Download-Password'));
+        self::assertSame('override-pw', $this->requestAt(2)->getHeaderLine('X-Api2convert-Download-Password'));
     }
 
     public function testDownloadHelperCarriesDownloadPassword(): void
@@ -201,7 +201,7 @@ final class ConvertTest extends TestCase
         $bytes = $this->client()->download($output, 'hunter2')->contents();
 
         self::assertSame('BYTES', $bytes);
-        self::assertSame('hunter2', $this->requestAt(0)->getHeaderLine('X-Oc-Download-Password'));
+        self::assertSame('hunter2', $this->requestAt(0)->getHeaderLine('X-Api2convert-Download-Password'));
     }
 
     public function testConvertAsyncSetsDownloadPasswordOnCreate(): void
@@ -227,7 +227,7 @@ final class ConvertTest extends TestCase
         $result->contents();
 
         self::assertArrayNotHasKey('download_passwords', $this->bodyOf($this->requestAt(0)));
-        self::assertFalse($this->requestAt(2)->hasHeader('X-Oc-Download-Password'));
+        self::assertFalse($this->requestAt(2)->hasHeader('X-Api2convert-Download-Password'));
     }
 
     public function testOptionsDiscoveryQueriesByTargetOnly(): void

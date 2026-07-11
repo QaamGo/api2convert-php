@@ -7,9 +7,9 @@ All notable changes to this package are documented here. This project adheres to
 
 Security hardening for the HTTP transport and downloads.
 
-- The transport no longer auto-follows 3xx redirects, so the `X-Oc-Api-Key`, `X-Oc-Token` and
-  `X-Oc-Download-Password` headers can never ride a cross-host redirect. Password-less downloads are
-  followed manually with the `X-Oc-*` headers stripped on cross-origin hops.
+- The transport no longer auto-follows 3xx redirects, so the `X-Api2convert-Api-Key`, `X-Api2convert-Token` and
+  `X-Api2convert-Download-Password` headers can never ride a cross-host redirect. Password-less downloads are
+  followed manually with the `X-Api2convert-*` headers stripped on cross-origin hops.
 - Un-followed 3xx responses and malformed URLs now surface as a `NetworkException` instead of leaking
   or hanging; partial download files are cleaned up on error.
 - Dynamic URL path segments are percent-encoded.

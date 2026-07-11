@@ -87,8 +87,8 @@ final class Api2Convert
             // not the per-request timeout — so we bound only `connect_timeout`.
             'connect_timeout' => $config->timeout,
             'http_errors' => false,
-            // Never let Guzzle follow a 3xx transparently: our custom X-Oc-Api-Key /
-            // X-Oc-Token / X-Oc-Download-Password secrets ride in headers that Guzzle's
+            // Never let Guzzle follow a 3xx transparently: our custom X-Api2convert-Api-Key /
+            // X-Api2convert-Token / X-Api2convert-Download-Password secrets ride in headers that Guzzle's
             // redirect middleware forwards across a cross-host hop, so an
             // auto-following client could leak them to a redirect target. The download
             // path re-implements the one legitimate (passwordless) redirect manually in
@@ -160,7 +160,7 @@ final class Api2Convert
      * @param string|null          $category Conversion category, when a target is ambiguous.
      * @param string|null          $filename Filename to advertise for an uploaded local file.
      * @param string|null          $downloadPassword Protect the result with this password; the
-     *                                                `X-Oc-Download-Password` header is then
+     *                                                `X-Api2convert-Download-Password` header is then
      *                                                required to download it.
      */
     public function convertAsync(

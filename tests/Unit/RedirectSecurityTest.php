@@ -10,7 +10,7 @@ use Api2Convert\Tests\TestCase;
 use GuzzleHttp\Psr7\Response;
 
 /**
- * Secrets ride in custom `X-Oc-*` headers, which HTTP redirect handlers forward
+ * Secrets ride in custom `X-Api2convert-*` headers, which HTTP redirect handlers forward
  * across a cross-host hop. These tests pin the two-mode redirect policy: an
  * authenticated / secret-bearing request never follows a 3xx (so the secret can
  * never reach the redirect target), while a plain passwordless download may follow
@@ -20,7 +20,7 @@ final class RedirectSecurityTest extends TestCase
 {
     public function testAuthenticatedRedirectIsSurfacedAndApiKeyNotResent(): void
     {
-        // A 3xx on the authenticated JSON path is never followed (so X-Oc-Api-Key
+        // A 3xx on the authenticated JSON path is never followed (so X-Api2convert-Api-Key
         // can't reach the redirect target) and is surfaced as a typed error rather
         // than silently decoding the redirect body into an empty model. Without the
         // interpret() 3xx guard this call would return an empty Job and this test
@@ -41,12 +41,12 @@ final class RedirectSecurityTest extends TestCase
         $requests = $this->http->getRequests();
         self::assertCount(1, $requests, 'The redirect must not be followed for an authenticated request.');
         self::assertSame('api.api2convert.com', $requests[0]->getUri()->getHost());
-        self::assertSame('test-key', $requests[0]->getHeaderLine('X-Oc-Api-Key'));
+        self::assertSame('test-key', $requests[0]->getHeaderLine('X-Api2convert-Api-Key'));
     }
 
     public function testPasswordBearingDownloadDoesNotLeakPasswordCrossHost(): void
     {
-        // A download carrying X-Oc-Download-Password must refuse to follow a redirect
+        // A download carrying X-Api2convert-Download-Password must refuse to follow a redirect
         // and surface it as a typed error — never a second request to the new host.
         $this->http->addResponse(new Response(302, ['Location' => 'https://evil.example.com/steal']));
         $output = new OutputFile(id: 'o', uri: 'https://dl.example.com/file', filename: 'result.pdf');
@@ -61,7 +61,7 @@ final class RedirectSecurityTest extends TestCase
         $requests = $this->http->getRequests();
         self::assertCount(1, $requests, 'A secret-bearing download must not follow the redirect.');
         self::assertSame('dl.example.com', $requests[0]->getUri()->getHost());
-        self::assertSame('s3cr3t', $requests[0]->getHeaderLine('X-Oc-Download-Password'));
+        self::assertSame('s3cr3t', $requests[0]->getHeaderLine('X-Api2convert-Download-Password'));
     }
 
     public function testPasswordlessDownloadFollowsStorageRedirect(): void
@@ -77,7 +77,7 @@ final class RedirectSecurityTest extends TestCase
         $requests = $this->http->getRequests();
         self::assertCount(2, $requests);
         self::assertSame('https://cdn.example.com/real', (string) $requests[1]->getUri());
-        self::assertSame('', $requests[1]->getHeaderLine('X-Oc-Download-Password'));
+        self::assertSame('', $requests[1]->getHeaderLine('X-Api2convert-Download-Password'));
     }
 
     public function testPasswordlessDownloadWithUnresolvableRedirectRaisesNetworkException(): void
