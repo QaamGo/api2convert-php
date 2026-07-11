@@ -79,7 +79,12 @@ final class Api2Convert
         $config = Config::create($apiKey, $options);
         $factory = new HttpFactory();
         $httpClient ??= new GuzzleClient([
-            'timeout' => $config->timeout,
+            // Bound only the connect/handshake phase, never the whole transfer. A
+            // whole-request timeout (Guzzle's `timeout` → cURL `CURLOPT_TIMEOUT`) caps
+            // connect + send + receive together, so it aborts a large/slow streamed
+            // upload while its body is still being sent, and a big download while its
+            // body is still arriving. The body transfer must be governed by the caller,
+            // not the per-request timeout — so we bound only `connect_timeout`.
             'connect_timeout' => $config->timeout,
             'http_errors' => false,
             // Never let Guzzle follow a 3xx transparently: our custom X-Oc-Api-Key /

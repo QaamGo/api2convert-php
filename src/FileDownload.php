@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Api2Convert;
 
 use Api2Convert\Exception\Api2ConvertException;
+use Api2Convert\Exception\NetworkException;
 use Api2Convert\Http\Transport;
 use Api2Convert\Model\OutputFile;
+use Psr\Http\Message\StreamInterface;
 
 /**
  * A downloadable output file. Returned by `$client->download($output)` and used
@@ -50,33 +52,78 @@ final class FileDownload
             throw new Api2ConvertException("Could not create directory: {$dir}");
         }
 
-        $source = $this->transport->download($this->output->uri, $this->headers($downloadPassword));
-        $handle = fopen($target, 'w');
-        if ($handle === false) {
-            $source->close();
-            throw new Api2ConvertException("Could not open file for writing: {$target}");
+        // Stream into a sibling temp file and rename over the target only after a clean
+        // write+close, so a download either fully replaces the target or leaves it
+        // untouched. Streaming straight into the target used to truncate a pre-existing
+        // file up front and, on a mid-stream failure, delete it — destroying a complete
+        // file when a retried/partial download failed.
+        $temp = @tempnam($dir, '.a2c-download-');
+        if ($temp === false) {
+            throw new Api2ConvertException("Could not write file: {$target}");
         }
 
+        $committed = false;
         try {
-            while (!$source->eof()) {
-                fwrite($handle, $source->read(1 << 16));
-            }
-        } catch (\Throwable $e) {
-            // A mid-transfer failure must not leave a truncated file masquerading as a
-            // complete download — remove the partial target before rethrowing.
-            fclose($handle);
-            $source->close();
-            if (is_file($target)) {
-                @unlink($target);
+            $source = $this->transport->download($this->output->uri, $this->headers($downloadPassword));
+            $handle = fopen($temp, 'w');
+            if ($handle === false) {
+                $source->close();
+                throw new Api2ConvertException("Could not open file for writing: {$target}");
             }
 
-            throw $e;
+            $closed = false;
+            try {
+                $this->copy($source, $handle, $target);
+                // fclose flushes buffered bytes; a failure here (e.g. a disk filling up,
+                // surfacing only on flush) must not let a truncated write pass as a
+                // complete file — surface it as a write error.
+                $closed = true;
+                if (fclose($handle) === false) {
+                    throw new Api2ConvertException("Could not write file: {$target}");
+                }
+            } finally {
+                $source->close();
+                if (!$closed) {
+                    fclose($handle);
+                }
+            }
+
+            if (!@rename($temp, $target)) {
+                throw new Api2ConvertException("Could not write file: {$target}");
+            }
+            $committed = true;
+        } finally {
+            // On any failure the target is never touched; only the temp file is removed.
+            if (!$committed && is_file($temp)) {
+                @unlink($temp);
+            }
         }
-
-        fclose($handle);
-        $source->close();
 
         return $target;
+    }
+
+    /**
+     * Copy the download body into $handle, attributing a mid-stream failure to the
+     * correct side: a read fault on the network response surfaces as a typed
+     * {@see NetworkException}, while a write fault is a filesystem
+     * {@see Api2ConvertException} — so a dropped connection is never mislabelled as a
+     * "could not write" error, and a full disk is never mislabelled as a network error.
+     *
+     * @param resource $handle
+     */
+    private function copy(StreamInterface $source, $handle, string $target): void
+    {
+        while (!$source->eof()) {
+            try {
+                $chunk = $source->read(1 << 16);
+            } catch (\Throwable $e) {
+                throw new NetworkException('The download was interrupted: ' . $e->getMessage(), 0, $e);
+            }
+
+            if (fwrite($handle, $chunk) === false) {
+                throw new Api2ConvertException("Could not write file: {$target}");
+            }
+        }
     }
 
     /**
