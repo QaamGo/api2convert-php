@@ -39,6 +39,13 @@ final class Transport
     private const MAX_DOWNLOAD_REDIRECTS = 5;
 
     /**
+     * Upper bound for a control-plane (API / error) JSON body we buffer into memory,
+     * so a hostile or buggy server cannot force an unbounded read (OOM) on these
+     * paths. File downloads are streamed to disk and bounded separately, not here.
+     */
+    private const MAX_RESPONSE_BYTES = 16 * 1024 * 1024; // 16 MiB
+
+    /**
      * Upper bound for an honored `Retry-After`. A server (or misconfigured proxy)
      * asking for an absurd delay can't stall a worker for hours — we never sleep
      * longer than this inside a single retry.
@@ -187,7 +194,7 @@ final class Transport
             );
         }
 
-        $raw = (string) $response->getBody();
+        $raw = $this->readCapped($response);
         if ($raw === '') {
             return [];
         }
@@ -328,12 +335,41 @@ final class Transport
     private function decodeSafe(ResponseInterface $response): array
     {
         try {
-            $decoded = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+            $decoded = json_decode($this->readCapped($response), true, 512, JSON_THROW_ON_ERROR);
 
             return is_array($decoded) ? $decoded : [];
         } catch (\JsonException) {
             return [];
         }
+    }
+
+    /**
+     * Read a control-plane (API / error) response body into a string, but never
+     * more than {@see MAX_RESPONSE_BYTES}. The PSR-7 body is a stream, so we pull
+     * bounded chunks and stop the moment the cap is passed — a hostile or buggy
+     * server cannot force an unbounded in-memory read (OOM) on these paths the way
+     * a plain `(string) $stream` cast would. An over-cap body is surfaced as a
+     * {@see NetworkException}, staying inside the SDK exception hierarchy.
+     */
+    private function readCapped(ResponseInterface $response): string
+    {
+        $stream = $response->getBody();
+
+        $raw = '';
+        while (!$stream->eof()) {
+            // Allow one byte past the cap so an over-cap body is detected rather than
+            // silently truncated; the total buffered here never exceeds the cap + 1.
+            $chunk = $stream->read(self::MAX_RESPONSE_BYTES - strlen($raw) + 1);
+            if ($chunk === '') {
+                break;
+            }
+            $raw .= $chunk;
+            if (strlen($raw) > self::MAX_RESPONSE_BYTES) {
+                throw new NetworkException('API2Convert response body exceeds 16 MiB.');
+            }
+        }
+
+        return $raw;
     }
 
     private function backoff(int $attempt, string $retryAfter = ''): void
