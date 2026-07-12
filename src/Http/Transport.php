@@ -13,6 +13,7 @@ use Api2Convert\Exception\PaymentRequiredException;
 use Api2Convert\Exception\RateLimitException;
 use Api2Convert\Exception\ServerException;
 use Api2Convert\Exception\ValidationException;
+use Api2Convert\Support\Redactor;
 use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
@@ -225,7 +226,12 @@ final class Transport
             return;
         }
 
-        $body = $this->decodeSafe($response);
+        // Belt-and-suspenders: deep-redact the decoded error body before it lands on the
+        // exception. Cloud credentials ride in the plaintext request body; the API only ever
+        // echoes field *names* (never a value), but a future server/proxy change must not be
+        // able to surface a secret through `$e->body`. The `message` is server-provided text and
+        // is never derived from the request body.
+        $body = Redactor::redactBody($this->decodeSafe($response));
         $apiMessage = $body['message'] ?? null;
         $message = is_string($apiMessage) ? $apiMessage : ($response->getReasonPhrase() ?: 'Request failed');
         $requestId = $response->getHeaderLine('X-Request-Id') ?: null;

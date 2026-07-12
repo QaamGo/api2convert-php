@@ -12,8 +12,9 @@ use Api2Convert\Support\Data;
 final class Conversion
 {
     /**
-     * @param array<string, mixed> $options  Target-specific options (discover them via `$client->options()`).
-     * @param array<string, mixed> $metadata Free-form metadata echoed back by the API.
+     * @param array<string, mixed> $options       Target-specific options (discover them via `$client->options()`).
+     * @param array<string, mixed> $metadata      Free-form metadata echoed back by the API.
+     * @param list<OutputTarget>   $outputTargets Cloud delivery targets for this conversion's output, if any.
      */
     public function __construct(
         public readonly string $target,
@@ -21,6 +22,7 @@ final class Conversion
         public readonly ?string $category = null,
         public readonly array $options = [],
         public readonly array $metadata = [],
+        public readonly array $outputTargets = [],
     ) {
     }
 
@@ -35,6 +37,7 @@ final class Conversion
             Data::nullableString($data['category'] ?? null),
             Data::object($data['options'] ?? null),
             Data::object($data['metadata'] ?? null),
+            Data::mapObjects($data['output_target'] ?? null, OutputTarget::fromArray(...)),
         );
     }
 }

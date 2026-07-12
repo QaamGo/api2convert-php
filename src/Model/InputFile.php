@@ -13,6 +13,8 @@ final class InputFile
 {
     /**
      * @param array<string, mixed> $options
+     * @param array<string, mixed> $parameters Cloud-input locator keys (`bucket`, `file`, `host`, …); empty for
+     *                                          non-cloud inputs. Credentials are never surfaced on read.
      */
     public function __construct(
         public readonly ?string $id,
@@ -23,6 +25,7 @@ final class InputFile
         public readonly ?int $size = null,
         public readonly ?string $contentType = null,
         public readonly array $options = [],
+        public readonly array $parameters = [],
     ) {
     }
 
@@ -40,6 +43,7 @@ final class InputFile
             Data::nullableInt($data['size'] ?? null),
             Data::nullableString($data['content_type'] ?? null),
             Data::object($data['options'] ?? null),
+            Data::object($data['parameters'] ?? null),
         );
     }
 }

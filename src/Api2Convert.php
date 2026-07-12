@@ -7,8 +7,10 @@ namespace Api2Convert;
 use Api2Convert\Exception\ConfigurationException;
 use Api2Convert\Http\Config;
 use Api2Convert\Http\Transport;
+use Api2Convert\Input\CloudInput;
 use Api2Convert\Model\Job;
 use Api2Convert\Model\OutputFile;
+use Api2Convert\Model\OutputTarget;
 use Api2Convert\Resource\ContractsResource;
 use Api2Convert\Resource\ConversionsResource;
 use Api2Convert\Resource\JobsResource;
@@ -123,7 +125,13 @@ final class Api2Convert
      * $client->convert('photo.png', 'jpg', ['quality' => 85, 'width' => 1280])->save('out/');
      * ```
      *
-     * @param string|resource|StreamInterface $input
+     * A {@see CloudInput} imports the source straight from customer storage (a started job, like a
+     * remote URL). Pass `outputTargets` to deliver the output(s) to customer storage instead of
+     * producing a downloadable file — the job then completes with **no** local output and the
+     * returned result is not downloaded (calling `output()`/`save()` on it would have nothing to
+     * fetch).
+     *
+     * @param string|resource|StreamInterface|CloudInput $input
      * @param string               $to          Target format, e.g. `pdf`, `jpg`, `mp4`.
      * @param array<string, mixed> $options     Target-specific conversion options (discover via {@see options()}).
      * @param string|null          $category    Conversion category, when a target is ambiguous.
@@ -132,6 +140,8 @@ final class Api2Convert
      * @param string|null          $filename    Filename to advertise for an uploaded local file.
      * @param string|null          $downloadPassword Protect the result with this password; it is
      *                                                remembered and sent automatically on download.
+     * @param list<OutputTarget>   $outputTargets Cloud delivery targets attached to the conversion
+     *                                            (never merged into `$options`).
      */
     public function convert(
         mixed $input,
@@ -142,8 +152,18 @@ final class Api2Convert
         ?int $outputIndex = null,
         ?string $filename = null,
         ?string $downloadPassword = null,
+        array $outputTargets = [],
     ): ConversionResult {
-        $job = $this->startConversion($input, $to, $options, $category, null, $filename, $downloadPassword);
+        $job = $this->startConversion(
+            $input,
+            $to,
+            $options,
+            $category,
+            null,
+            $filename,
+            $downloadPassword,
+            $outputTargets,
+        );
         $done = $this->jobs->wait($job->id, $timeout);
 
         return new ConversionResult($done, $this->transport, $outputIndex ?? 0, $downloadPassword);
@@ -153,7 +173,7 @@ final class Api2Convert
      * Start a conversion without waiting. Pass a `callback` URL to be notified, or
      * poll later with `jobs()->get($job->id)` / `jobs()->wait($job->id)`.
      *
-     * @param string|resource|StreamInterface $input
+     * @param string|resource|StreamInterface|CloudInput $input
      * @param string               $to       Target format, e.g. `pdf`, `jpg`, `mp4`.
      * @param array<string, mixed> $options  Target-specific conversion options.
      * @param string|null          $callback Webhook URL notified when the job's status changes.
@@ -162,6 +182,8 @@ final class Api2Convert
      * @param string|null          $downloadPassword Protect the result with this password; the
      *                                                `X-Api2convert-Download-Password` header is then
      *                                                required to download it.
+     * @param list<OutputTarget>   $outputTargets Cloud delivery targets attached to the conversion
+     *                                            (never merged into `$options`).
      */
     public function convertAsync(
         mixed $input,
@@ -171,8 +193,18 @@ final class Api2Convert
         ?string $category = null,
         ?string $filename = null,
         ?string $downloadPassword = null,
+        array $outputTargets = [],
     ): Job {
-        return $this->startConversion($input, $to, $options, $category, $callback, $filename, $downloadPassword);
+        return $this->startConversion(
+            $input,
+            $to,
+            $options,
+            $category,
+            $callback,
+            $filename,
+            $downloadPassword,
+            $outputTargets,
+        );
     }
 
     /**
@@ -232,12 +264,14 @@ final class Api2Convert
     }
 
     /**
-     * Build + start a job from a file/URL/stream input. Shared by convert() and
-     * convertAsync(): a URL becomes a single remote-input job started immediately;
-     * a local file/stream is staged, uploaded, then started.
+     * Build + start a job from a file/URL/stream/cloud input. Shared by convert() and
+     * convertAsync(): a URL or a {@see CloudInput} becomes a single started job with an inline
+     * input; a local file/stream is staged, uploaded, then started. Any `$outputTargets` are
+     * attached to the conversion's `output_target` (never merged into `$options`).
      *
-     * @param string|resource|StreamInterface $input
+     * @param string|resource|StreamInterface|CloudInput $input
      * @param array<string, mixed>             $options
+     * @param list<OutputTarget>               $outputTargets
      */
     private function startConversion(
         mixed $input,
@@ -247,6 +281,7 @@ final class Api2Convert
         ?string $callback,
         ?string $filename,
         ?string $downloadPassword = null,
+        array $outputTargets = [],
     ): Job {
         $conversion = ['target' => $to];
         if ($category !== null) {
@@ -254,6 +289,12 @@ final class Api2Convert
         }
         if ($options !== []) {
             $conversion['options'] = $options;
+        }
+        if ($outputTargets !== []) {
+            $conversion['output_target'] = array_map(
+                static fn (OutputTarget $target): array => $target->toArray(),
+                array_values($outputTargets),
+            );
         }
 
         $job = ['conversion' => [$conversion]];
@@ -263,6 +304,15 @@ final class Api2Convert
         }
         if ($downloadPassword !== null) {
             $job['download_passwords'] = [$downloadPassword];
+        }
+
+        // A cloud input imports from customer storage — a started job with the descriptor inline,
+        // exactly like a remote URL (never staged/uploaded).
+        if ($input instanceof CloudInput) {
+            $job['process'] = true;
+            $job['input'] = [$input->toArray()];
+
+            return $this->jobs->create($job);
         }
 
         if (is_string($input) && preg_match('#^https?://#i', $input) === 1) {

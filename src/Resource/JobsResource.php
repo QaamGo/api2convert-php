@@ -8,6 +8,7 @@ use Api2Convert\Exception\ConversionFailedException;
 use Api2Convert\Exception\TimeoutException;
 use Api2Convert\Http\Config;
 use Api2Convert\Http\Transport;
+use Api2Convert\Input\CloudInput;
 use Api2Convert\Model\InputFile;
 use Api2Convert\Model\Job;
 use Api2Convert\Model\OutputFile;
@@ -92,15 +93,18 @@ final class JobsResource
     }
 
     /**
-     * Attach an input by descriptor — e.g. a remote URL:
-     * `addInput($id, ['type' => 'remote', 'source' => 'https://…'])`.
+     * Attach an input — a {@see CloudInput} builder, or a raw descriptor array, e.g. a remote URL
+     * (`addInput($id, ['type' => 'remote', 'source' => 'https://…'])`) or a Google Drive picker
+     * (`['type' => 'gdrive_picker', 'source' => $fileId, 'credentials' => ['token' => …]]`).
      *
-     * @param array<string, mixed> $input
+     * @param CloudInput|array<string, mixed> $input
      */
-    public function addInput(string $jobId, array $input): InputFile
+    public function addInput(string $jobId, CloudInput|array $input): InputFile
     {
+        $descriptor = $input instanceof CloudInput ? $input->toArray() : $input;
+
         return InputFile::fromArray(
-            $this->transport->request('POST', '/jobs/' . Transport::segment($jobId) . '/input', $input)
+            $this->transport->request('POST', '/jobs/' . Transport::segment($jobId) . '/input', $descriptor)
         );
     }
 
