@@ -116,6 +116,53 @@ try {
 > sent — call `Api2Convert::webhooks()->parse($payload)` (or pass an empty secret) to deserialize
 > the callback without verifying.
 
+## Cloud storage
+
+Read an input straight from your own S3, Azure, FTP or Google Cloud storage, and/or deliver the
+converted output into a bucket — no re-uploading, no re-downloading.
+
+**Read the input from S3.** A `CloudInput` is a started job, just like a remote URL — build it with
+the per-provider factory (flat, lowercase keys, exactly as the API expects) and save the result
+locally:
+
+```php
+use Api2Convert\Input\CloudInput;
+
+$input = CloudInput::amazonS3(
+    bucket: 'my-bucket',
+    file: 'invoices/march.docx',
+    accesskeyid: 'AKIA…',
+    secretaccesskey: '…',
+);
+
+$client->convert($input, 'pdf')->save('march.pdf');
+```
+
+`azure(container, file, accountname, accountkey)`, `ftp(host, file, username, password)` and
+`googleCloud(projectid, bucket, file, keyfile)` work the same way.
+
+**Deliver the output to S3.** Attach one or more `OutputTarget`s via `outputTargets`. When a target
+is set the conversion delivers straight to your storage and there's **no** local download:
+
+```php
+use Api2Convert\Enum\CloudProvider;
+use Api2Convert\Model\OutputTarget;
+
+$target = OutputTarget::of(CloudProvider::AmazonS3, [
+    'bucket' => 'my-bucket',
+    'file'   => 'out/march.pdf',
+], [
+    'accesskeyid'     => 'AKIA…',
+    'secretaccesskey' => '…',
+]);
+
+$client->convert('march.docx', 'pdf', outputTargets: [$target]);   // delivered to the bucket, nothing to save()
+```
+
+Credentials ride in the request body but are **redacted** in exception messages and when a
+`CloudInput`/`OutputTarget` is printed or logged (`credentials` renders as `[REDACTED]`) — they are
+never surfaced on read.
+
 ## Error handling
 
 Every failure is a typed exception extending `Api2Convert\Exception\Api2ConvertException`:
