@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # Composer dependencies. This is a library with no committed composer.lock, so
+  # Dependabot updates the constraints in composer.json — which is exactly what keeps
+  # the guzzle/psr7 floors from going stale as advisories land upstream.
+  - package-ecosystem: composer
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # guzzle and psr7 move together; batch them into one PR.
+      guzzle:
+        patterns:
+          - "guzzlehttp/*"
+
+  # GitHub Actions used by CI and the release pipeline. Keeps the pinned action
+  # versions current (and, once SHA-pinned, updates the SHA + version comment).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10

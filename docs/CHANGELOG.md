@@ -3,6 +3,26 @@
 All notable changes to this package are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [10.4.0] - 2026-08-07
+
+Dependency floor raise and Guzzle 8 support. No API changes.
+
+### Changed
+- Raised the Guzzle floor to `^7.15.2 || ^8.0.1` and the PSR-7 floor to `^2.13 || ^3.0`. The
+  previous `^7.5` / `^2.4` permitted versions carrying fourteen published advisories, including
+  `GHSA-v5mv-p594-2x33` (HIGH, host-based check bypass). Composer 2.10 refuses advisory-affected
+  versions at resolution time, so a current toolchain was never exposed — but the constraint no
+  longer relies on that.
+- **Guzzle 8 is now supported.** The SDK is PSR-18/PSR-17 abstracted, so both the 7.x and 8.x
+  lines resolve cleanly; the full unit suite passes against each on PHP 8.2–8.5.
+
+### CI
+- The test matrix now runs at both `highest` and `lowest` dependency resolution, so the floors
+  the package advertises are actually executed rather than merely declared.
+- Added a `composer audit` gate at both ends of the declared range.
+
+> Note: 10.3.0 and 10.3.1 shipped without changelog entries; this file jumps from 10.2.1 to 10.4.0.
+
 ## [10.2.1] - 2026-07-08
 
 Security hardening for the HTTP transport and downloads.
