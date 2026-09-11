@@ -4,6 +4,7 @@ on:
   push:
     branches: [master, main]
   pull_request:
+  workflow_dispatch: # enables the manual live-run path the `live` job gates on
 
 permissions:
   contents: read
@@ -82,3 +83,27 @@ jobs:
         run: |
           composer update --no-interaction --no-progress --prefer-lowest --prefer-stable
           composer audit --no-interaction --abandoned=report
+
+  live:
+    name: Live conformance
+    runs-on: ubuntu-latest
+    # Live conformance hits the real (production) API and consumes quota, so it runs
+    # only on the default branch or a manual dispatch — never on pull requests.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
+    # Don't spend real conversions on a tree that doesn't even lint or unit-test.
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          # Same toolchain as live-conformance.yml, which runs this suite on tags.
+          php-version: '8.3'
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      # The suite calls markTestSkipped() when API2CONVERT_API_KEY is unset, so a
+      # checkout without the secret reports skips and still exits 0. The key is scoped
+      # to this step alone, so the third-party checkout/setup-php actions never see it.
+      - name: Live conformance (auto-skips without the key)
+        run: vendor/bin/phpunit --testsuite live
+        env:
+          API2CONVERT_API_KEY: ${{ secrets.API2CONVERT_API_KEY }}
