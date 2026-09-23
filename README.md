@@ -118,7 +118,7 @@ try {
 
 ## Cloud storage
 
-Read an input straight from your own S3, Azure, FTP or Google Cloud storage, and/or deliver the
+Read an input straight from your own S3, Azure or Google Cloud storage, and/or deliver the
 converted output into a bucket — no re-uploading, no re-downloading.
 
 **Read the input from S3.** A `CloudInput` is a started job, just like a remote URL — build it with
@@ -138,7 +138,7 @@ $input = CloudInput::amazonS3(
 $client->convert($input, 'pdf')->save('march.pdf');
 ```
 
-`azure(container, file, accountname, accountkey)`, `ftp(host, file, username, password)` and
+`azure(container, file, accountname, accountkey)` and
 `googleCloud(projectid, bucket, file, keyfile)` work the same way.
 
 **Deliver the output to S3.** Attach one or more `OutputTarget`s via `outputTargets`. When a target

@@ -27,9 +27,9 @@ final class CloudConnectorTest extends TestCase
 
     /** The exact output_target descriptor fixture 1 expects — note: no `status` key. */
     private const EXPECTED_OUTPUT_TARGET = [
-        'type' => 'ftp',
-        'parameters' => ['host' => 'ftp.example.com', 'file' => '/out/photo.jpg'],
-        'credentials' => ['username' => 'u', 'password' => 'p'],
+        'type' => 'azure',
+        'parameters' => ['container' => 'out-container', 'file' => '/out/photo.jpg'],
+        'credentials' => ['accountname' => 'n', 'accountkey' => 'k'],
     ];
 
     // ---- Fixture 1: create-payload (what convert() serializes) ------------------------------
@@ -47,9 +47,9 @@ final class CloudConnectorTest extends TestCase
             secretaccesskey: 'SECRET_TEST',
         );
         $target = new OutputTarget(
-            type: 'ftp',
-            parameters: ['host' => 'ftp.example.com', 'file' => '/out/photo.jpg'],
-            credentials: ['username' => 'u', 'password' => 'p'],
+            type: 'azure',
+            parameters: ['container' => 'out-container', 'file' => '/out/photo.jpg'],
+            credentials: ['accountname' => 'n', 'accountkey' => 'k'],
         );
 
         $this->client()->convert($input, 'jpg', outputTargets: [$target]);
@@ -80,9 +80,9 @@ final class CloudConnectorTest extends TestCase
             'conversion' => [[
                 'target' => 'jpg',
                 'output_target' => [OutputTarget::of(
-                    CloudProvider::Ftp,
-                    ['host' => 'ftp.example.com', 'file' => '/out/photo.jpg'],
-                    ['username' => 'u', 'password' => 'p'],
+                    CloudProvider::Azure,
+                    ['container' => 'out-container', 'file' => '/out/photo.jpg'],
+                    ['accountname' => 'n', 'accountkey' => 'k'],
                 )->toArray()],
             ]],
         ]);
@@ -96,15 +96,15 @@ final class CloudConnectorTest extends TestCase
 
     public function testAddInputAcceptsCloudInputBuilder(): void
     {
-        $this->http->addResponse($this->jsonResponse(200, ['id' => 'in-1', 'type' => 'cloud', 'source' => 'ftp']));
+        $this->http->addResponse($this->jsonResponse(200, ['id' => 'in-1', 'type' => 'cloud', 'source' => 'azure']));
 
-        $this->client()->jobs()->addInput('job-1', CloudInput::ftp('ftp.example.com', 'in/a.png', 'u', 'p'));
+        $this->client()->jobs()->addInput('job-1', CloudInput::azure('in-container', 'in/a.png', 'n', 'k'));
 
         $body = $this->bodyOf($this->requestAt(0));
         self::assertSame('cloud', $body['type']);
-        self::assertSame('ftp', $body['source']);
-        self::assertSame(['host' => 'ftp.example.com', 'file' => 'in/a.png'], $body['parameters']);
-        self::assertSame(['username' => 'u', 'password' => 'p'], $body['credentials']);
+        self::assertSame('azure', $body['source']);
+        self::assertSame(['container' => 'in-container', 'file' => 'in/a.png'], $body['parameters']);
+        self::assertSame(['accountname' => 'n', 'accountkey' => 'k'], $body['credentials']);
     }
 
     // ---- Fixture 2: read hydration (a GET /jobs/{id} response) ------------------------------
@@ -126,8 +126,8 @@ final class CloudConnectorTest extends TestCase
                 'id' => 'c-1',
                 'target' => 'jpg',
                 'output_target' => [[
-                    'type' => 'ftp',
-                    'parameters' => ['host' => 'ftp.example.com', 'file' => '/out/photo.jpg'],
+                    'type' => 'azure',
+                    'parameters' => ['container' => 'out-container', 'file' => '/out/photo.jpg'],
                     'credentials' => [],
                     'status' => 'uploading',
                 ]],
@@ -142,9 +142,9 @@ final class CloudConnectorTest extends TestCase
 
         // 2) output target status/parameters/type surface.
         $out = $job->conversion[0]->outputTargets[0];
-        self::assertSame('ftp', $out->type);
+        self::assertSame('azure', $out->type);
         self::assertSame('uploading', $out->status);
-        self::assertSame(['host' => 'ftp.example.com', 'file' => '/out/photo.jpg'], $out->parameters);
+        self::assertSame(['container' => 'out-container', 'file' => '/out/photo.jpg'], $out->parameters);
 
         // 3) credentials are never surfaced (the API returns them empty; the SDK does not hydrate).
         self::assertSame([], $out->credentials);
@@ -168,12 +168,31 @@ final class CloudConnectorTest extends TestCase
         self::assertSame('waiting', $job->conversion[0]->outputTargets[0]->status);
     }
 
+    public function testRetiredFtpProviderStillHydratesFromHistoricalJobs(): void
+    {
+        // `ftp` is no longer build-side vocabulary, but the API still returns it on jobs created
+        // before it was retired. Reads must stay raw strings so those jobs never fail to hydrate.
+        $job = Job::fromArray([
+            'id' => 'job-1',
+            'status' => ['code' => 'completed'],
+            'input' => [['id' => 'in-1', 'type' => 'cloud', 'source' => 'ftp', 'status' => 'ready']],
+            'conversion' => [[
+                'target' => 'jpg',
+                'output_target' => [['type' => 'ftp', 'status' => 'completed']],
+            ]],
+        ]);
+
+        self::assertSame('ftp', $job->input[0]->source);
+        self::assertSame('ftp', $job->conversion[0]->outputTargets[0]->type);
+        self::assertNull(CloudProvider::tryFrom('ftp'));
+    }
+
     // ---- Unit: the new value types ---------------------------------------------------------
 
     public function testCloudProviderVocabulary(): void
     {
         self::assertSame(
-            ['amazons3', 'azure', 'ftp', 'gdrive', 'googlecloud', 'youtube'],
+            ['amazons3', 'azure', 'gdrive', 'googlecloud', 'youtube'],
             array_map(static fn (CloudProvider $p): string => $p->value, CloudProvider::cases()),
         );
         // Tolerant hydration never throws on an unknown provider.
@@ -206,10 +225,10 @@ final class CloudConnectorTest extends TestCase
 
     public function testOutputTargetOmitsStatusOnSerializeButHydratesItOnRead(): void
     {
-        $created = new OutputTarget('ftp', ['host' => 'h'], ['username' => 'u'], status: 'completed');
+        $created = new OutputTarget('azure', ['container' => 'c'], ['accountkey' => 'k'], status: 'completed');
         self::assertArrayNotHasKey('status', $created->toArray());
 
-        $read = OutputTarget::fromArray(['type' => 'ftp', 'parameters' => ['host' => 'h'], 'status' => 'completed']);
+        $read = OutputTarget::fromArray(['type' => 'azure', 'parameters' => ['container' => 'c'], 'status' => 'completed']);
         self::assertSame('completed', $read->status);
         self::assertSame([], $read->credentials);
     }

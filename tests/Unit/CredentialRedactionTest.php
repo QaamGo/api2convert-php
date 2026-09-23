@@ -41,9 +41,9 @@ final class CredentialRedactionTest extends TestCase
     public function testOutputTargetToStringMasksCredentials(): void
     {
         $rendered = (string) OutputTarget::of(
-            CloudProvider::Ftp,
-            ['host' => 'ftp.example.com'],
-            ['username' => 'u', 'password' => self::SECRET],
+            CloudProvider::Azure,
+            ['container' => 'out-container'],
+            ['accountname' => 'n', 'accountkey' => self::SECRET],
         );
 
         self::assertStringNotContainsString(self::SECRET, $rendered);

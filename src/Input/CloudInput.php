@@ -101,27 +101,6 @@ final class CloudInput implements Stringable
     }
 
     /**
-     * Import from an FTP server.
-     *
-     * @param array<string, mixed> $parameters  Extra/forward-compat locator keys, merged in.
-     * @param array<string, mixed> $credentials Extra/forward-compat secret keys, merged in.
-     */
-    public static function ftp(
-        string $host,
-        string $file,
-        string $username,
-        string $password,
-        array $parameters = [],
-        array $credentials = [],
-    ): self {
-        return new self(
-            CloudProvider::Ftp->value,
-            ['host' => $host, 'file' => $file, ...$parameters],
-            ['username' => $username, 'password' => $password, ...$credentials],
-        );
-    }
-
-    /**
      * Import from Google Cloud Storage.
      *
      * @param array<string, mixed> $parameters  Extra/forward-compat locator keys, merged in.
