@@ -228,7 +228,9 @@ final class CloudConnectorTest extends TestCase
         $created = new OutputTarget('azure', ['container' => 'c'], ['accountkey' => 'k'], status: 'completed');
         self::assertArrayNotHasKey('status', $created->toArray());
 
-        $read = OutputTarget::fromArray(['type' => 'azure', 'parameters' => ['container' => 'c'], 'status' => 'completed']);
+        $read = OutputTarget::fromArray(
+            ['type' => 'azure', 'parameters' => ['container' => 'c'], 'status' => 'completed'],
+        );
         self::assertSame('completed', $read->status);
         self::assertSame([], $read->credentials);
     }
